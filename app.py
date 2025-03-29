@@ -1,46 +1,45 @@
 # app.py
 
-# --- Monkey-Patch for missing distutils and setuptools ---
+# --- Monkey-Patch for setuptools and undetected_chromedriver ---
 import sys
 import importlib.util
 
 def patch_setuptools():
-    """
-    Ensure that 'setuptools' is available.
-    If it's not found, raise an error so that you know to include it in your requirements.
-    """
     spec = importlib.util.find_spec("setuptools")
     if spec is None:
-        raise ModuleNotFoundError("setuptools module not found. Ensure setuptools is installed.")
+        print("Warning: setuptools module not found. Please ensure setuptools is installed.")
+    else:
+        print("setuptools found.")
 
 def patch_undetected():
     """
-    Patch undetected_chromedriver's dependency on distutils.version.LooseVersion
-    by redirecting any 'distutils' import to setuptools' bundled version if available.
-    If not, use packaging.version as a fallback.
+    Patch undetected_chromedriver to remove its dependency on distutils.version.LooseVersion.
+    It replaces that import with packaging.version.Version.
     """
-    # First, try to find setuptools._distutils (the bundled version)
-    spec = importlib.util.find_spec("setuptools._distutils")
-    if spec:
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        sys.modules["distutils"] = module
-    else:
-        try:
-            # Fallback: create a dummy module that provides LooseVersion from packaging.version
-            from packaging.version import Version as LooseVersion
-            import types
-            dummy = types.ModuleType("distutils.version")
-            dummy.LooseVersion = LooseVersion
-            sys.modules["distutils"] = dummy
-        except Exception as e:
-            print("Failed to patch distutils:", e)
+    try:
+        import undetected_chromedriver
+    except ImportError as e:
+        print("undetected_chromedriver not found.", e)
+        return
+    from pathlib import Path
+    import re
+    base_dir = Path(undetected_chromedriver.__file__).parent
+    patcher_path = base_dir / "patcher.py"
+    text = patcher_path.read_text()
+    # Replace the problematic import
+    text = re.sub(
+        r"from distutils\.version import LooseVersion",
+        "from packaging.version import Version as LooseVersion",
+        text
+    )
+    patcher_path.write_text(text)
+    print("Patched undetected_chromedriver to remove distutils usage.")
 
-# Apply patches before any related imports
+# Apply patches before importing other modules
 patch_setuptools()
 patch_undetected()
 
-# --- Now import everything else ---
+# --- Now import the rest ---
 import streamlit as st
 import time
 import random
@@ -49,13 +48,13 @@ import openai
 from quora_automation import quora_login_and_post
 from reddit_automation import reddit_login_and_post
 from tripadvisor_automation import tripadvisor_login_and_post
-from automation_utils import search_google, extract_thread_content, choose_money_site, generate_ai_response
+from automation_utils import search_google, extract_thread_content, choose_money_site, generate_ai_response, solve_captcha_if_present
 
 st.set_page_config(page_title="Stealth Multi-Platform Poster", layout="centered")
 st.title("Stealth Multi-Platform Poster with Monkey-Patches")
 st.markdown("This tool automatically searches for threads, analyzes questions using ChatGPT, and posts tailored answers on Quora, Reddit, and TripAdvisor. A log report of processed URLs and statuses is maintained below.")
 
-# Initialize a log report list in session state
+# Initialize log records in session state
 if "log_records" not in st.session_state:
     st.session_state.log_records = []
 
@@ -80,7 +79,6 @@ if platform_choice != "auto":
     account = next(acc for acc in accounts if acc[0] == selected_account)
     username, password = account[1], account[2]
 else:
-    # For auto mode, we use Quora’s account as base.
     accounts = load_accounts("quora")
     if not accounts:
         st.error("No Quora accounts configured (required for auto mode).")
