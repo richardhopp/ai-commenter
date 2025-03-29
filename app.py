@@ -1,6 +1,6 @@
 # app.py
 
-# --- Monkey-Patch for setuptools and undetected_chromedriver ---
+# --- In-Memory Monkey-Patch for setuptools and undetected_chromedriver ---
 import sys
 import importlib.util
 
@@ -11,35 +11,21 @@ def patch_setuptools():
     else:
         print("setuptools found.")
 
-def patch_undetected():
-    """
-    Patch undetected_chromedriver to remove its dependency on distutils.version.LooseVersion.
-    It replaces that import with packaging.version.Version.
-    """
+def patch_undetected_in_memory():
     try:
-        import undetected_chromedriver
-    except ImportError as e:
-        print("undetected_chromedriver not found.", e)
-        return
-    from pathlib import Path
-    import re
-    base_dir = Path(undetected_chromedriver.__file__).parent
-    patcher_path = base_dir / "patcher.py"
-    text = patcher_path.read_text()
-    # Replace the problematic import
-    text = re.sub(
-        r"from distutils\.version import LooseVersion",
-        "from packaging.version import Version as LooseVersion",
-        text
-    )
-    patcher_path.write_text(text)
-    print("Patched undetected_chromedriver to remove distutils usage.")
+        import undetected_chromedriver.patcher as patcher
+        from packaging.version import Version as LooseVersion
+        # Override the LooseVersion used in the patcher module
+        patcher.LooseVersion = LooseVersion
+        print("Patched undetected_chromedriver.patcher in memory to use packaging.version.")
+    except Exception as e:
+        print("Error patching undetected_chromedriver in memory:", e)
 
-# Apply patches before importing other modules
+# Apply patches before any other imports that might use undetected_chromedriver
 patch_setuptools()
-patch_undetected()
+patch_undetected_in_memory()
 
-# --- Now import the rest ---
+# --- Now import everything else ---
 import streamlit as st
 import time
 import random
@@ -48,13 +34,22 @@ import openai
 from quora_automation import quora_login_and_post
 from reddit_automation import reddit_login_and_post
 from tripadvisor_automation import tripadvisor_login_and_post
-from automation_utils import search_google, extract_thread_content, choose_money_site, generate_ai_response, solve_captcha_if_present
+from automation_utils import (
+    search_google,
+    extract_thread_content,
+    choose_money_site,
+    generate_ai_response,
+    solve_captcha_if_present
+)
 
 st.set_page_config(page_title="Stealth Multi-Platform Poster", layout="centered")
 st.title("Stealth Multi-Platform Poster with Monkey-Patches")
-st.markdown("This tool automatically searches for threads, analyzes questions using ChatGPT, and posts tailored answers on Quora, Reddit, and TripAdvisor. A log report of processed URLs and statuses is maintained below.")
+st.markdown(
+    "This tool automatically searches for threads, analyzes questions using ChatGPT, and posts tailored answers on "
+    "Quora, Reddit, and TripAdvisor. A log report of processed URLs and statuses is maintained below."
+)
 
-# Initialize log records in session state
+# Initialize a log report list in session state
 if "log_records" not in st.session_state:
     st.session_state.log_records = []
 
@@ -79,6 +74,7 @@ if platform_choice != "auto":
     account = next(acc for acc in accounts if acc[0] == selected_account)
     username, password = account[1], account[2]
 else:
+    # For auto mode, we use Quora’s account as base.
     accounts = load_accounts("quora")
     if not accounts:
         st.error("No Quora accounts configured (required for auto mode).")
