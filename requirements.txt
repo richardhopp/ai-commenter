@@ -1,4 +1,3 @@
-setuptools
 streamlit
 selenium
 requests
@@ -6,3 +5,4 @@ openai
 beautifulsoup4
 packaging
 undetected-chromedriver==3.5.5
+setuptools
