@@ -1,3 +1,10 @@
+# app.py
+
+# --- Monkey-Patch undetected_chromedriver to remove distutils dependency ---
+import patch_undetected
+patch_undetected.patch_undetected()
+
+# --- Now import everything else ---
 import streamlit as st
 import time
 import random
