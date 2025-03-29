@@ -3,13 +3,25 @@ import sys
 import importlib.util
 
 def patch_undetected():
-    # Look for setuptools' bundled distutils
-    spec = importlib.util.find_spec("setuptools._distutils")
-    if spec:
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        # Redirect any import of 'distutils' to use setuptools' version
-        sys.modules["distutils"] = module
+    """
+    Monkey patch to replace 'distutils' with 'setuptools._distutils' if available.
+    This avoids import errors for undetected_chromedriver in environments where
+    setuptools' private distutils is used.
+    """
+    try:
+        spec = importlib.util.find_spec("setuptools._distutils")
+        if spec:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            sys.modules["distutils"] = module
+            print("Patched distutils using setuptools._distutils")
+        else:
+            # Fallback to standard library's distutils
+            import distutils
+            sys.modules["distutils"] = distutils
+            print("Fallback: Using standard library's distutils")
+    except Exception as e:
+        print(f"Failed to patch distutils: {e}")
 
 # Apply the monkey patch before any related imports
 patch_undetected()
