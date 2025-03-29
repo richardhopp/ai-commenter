@@ -1,17 +1,43 @@
-# --- Monkey-Patch undetected_chromedriver to remove distutils dependency ---
+# app.py
+
+# --- Monkey-Patch for missing distutils and setuptools ---
 import sys
 import importlib.util
 
+def patch_setuptools():
+    """
+    Ensure that 'setuptools' is available.
+    If it's not found, raise an error so that you know to include it in your requirements.
+    """
+    spec = importlib.util.find_spec("setuptools")
+    if spec is None:
+        raise ModuleNotFoundError("setuptools module not found. Ensure setuptools is installed.")
+
 def patch_undetected():
-    # Look for setuptools' bundled distutils
+    """
+    Patch undetected_chromedriver's dependency on distutils.version.LooseVersion
+    by redirecting any 'distutils' import to setuptools' bundled version if available.
+    If not, use packaging.version as a fallback.
+    """
+    # First, try to find setuptools._distutils (the bundled version)
     spec = importlib.util.find_spec("setuptools._distutils")
     if spec:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        # Redirect any import of 'distutils' to use setuptools' version
         sys.modules["distutils"] = module
+    else:
+        try:
+            # Fallback: create a dummy module that provides LooseVersion from packaging.version
+            from packaging.version import Version as LooseVersion
+            import types
+            dummy = types.ModuleType("distutils.version")
+            dummy.LooseVersion = LooseVersion
+            sys.modules["distutils"] = dummy
+        except Exception as e:
+            print("Failed to patch distutils:", e)
 
-# Apply the monkey patch before any related imports
+# Apply patches before any related imports
+patch_setuptools()
 patch_undetected()
 
 # --- Now import everything else ---
@@ -26,7 +52,7 @@ from tripadvisor_automation import tripadvisor_login_and_post
 from automation_utils import search_google, extract_thread_content, choose_money_site, generate_ai_response
 
 st.set_page_config(page_title="Stealth Multi-Platform Poster", layout="centered")
-st.title("Stealth Multi-Platform Poster")
+st.title("Stealth Multi-Platform Poster with Monkey-Patches")
 st.markdown("This tool automatically searches for threads, analyzes questions using ChatGPT, and posts tailored answers on Quora, Reddit, and TripAdvisor. A log report of processed URLs and statuses is maintained below.")
 
 # Initialize a log report list in session state
@@ -93,18 +119,17 @@ if platform_choice != "auto":
         try:
             if platform_choice == "quora":
                 res = quora_login_and_post(username, password, content, question_url=target_url, proxy=proxy)
-                thread_url = target_url if target_url else "New Question"
+                log_url = target_url if target_url else "New Question"
             elif platform_choice == "reddit":
                 res = reddit_login_and_post(username, password, content, subreddit, post_title, proxy=proxy)
-                thread_url = f"r/{subreddit}"
+                log_url = f"r/{subreddit}"
             elif platform_choice == "tripadvisor":
                 res = tripadvisor_login_and_post(username, password, content, thread_url=target_url, proxy=proxy)
-                thread_url = target_url
-            # Log action
+                log_url = target_url
             st.session_state.log_records.append({
                 "Timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "Platform": platform_choice,
-                "Thread URL": thread_url,
+                "Thread URL": log_url,
                 "Status": "Success" if res else "Failed"
             })
             st.success("Content posted successfully!")
@@ -115,7 +140,6 @@ else:
         st.info("Starting auto process: Searching for threads and generating responses...")
         query = f'site:quora.com "{root_keyword}"'
         try:
-            from automation_utils import search_google
             thread_urls = search_google(query, max_results)
         except Exception as e:
             st.error(f"Search error: {e}")
@@ -127,7 +151,6 @@ else:
             for url in thread_urls:
                 st.write(f"Processing thread: {url}")
                 try:
-                    from automation_utils import extract_thread_content
                     question_text = extract_thread_content(url)
                     if not question_text:
                         st.write("Could not extract question text; skipping.")
