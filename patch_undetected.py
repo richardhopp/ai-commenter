@@ -6,24 +6,18 @@ import undetected_chromedriver
 
 def patch_undetected():
     """
-    Replaces 'from distutils.version import LooseVersion' with
-    'from packaging.version import Version as LooseVersion' in undetected_chromedriver's patcher.py.
+    Instead of rewriting the file (which can cause permission errors), 
+    we patch the module in memory by overriding the LooseVersion attribute.
     """
-    base_dir = Path(undetected_chromedriver.__file__).parent
-    patcher_path = base_dir / "patcher.py"
-    text = patcher_path.read_text()
-    text = re.sub(
-        r"from distutils\.version import LooseVersion",
-        "from packaging.version import Version as LooseVersion",
-        text
-    )
-    patcher_path.write_text(text)
-    print("Patched undetected_chromedriver to remove distutils usage.")
+    try:
+        import undetected_chromedriver.patcher as patcher
+        from packaging.version import Version as LooseVersion
+        patcher.LooseVersion = LooseVersion
+        print("Patched undetected_chromedriver.patcher in memory to use packaging.version.")
+    except Exception as e:
+        print("Error patching undetected_chromedriver in memory:", e)
 
 def patch_setuptools():
-    """
-    Check if setuptools is available. If not, print a warning.
-    """
     import importlib.util
     spec = importlib.util.find_spec("setuptools")
     if spec is None:
