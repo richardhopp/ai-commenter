@@ -1,22 +1,18 @@
-# app.py
- 
- # --- Monkey-Patch undetected_chromedriver to remove distutils dependency ---
- import patch_undetected
- patch_undetected.patch_undetected()
- import sys
- import importlib.util
- 
- def patch_undetected():
-     # Look for setuptools' bundled distutils
-     spec = importlib.util.find_spec("setuptools._distutils")
-     if spec:
-         module = importlib.util.module_from_spec(spec)
-         spec.loader.exec_module(module)
-         # Redirect any import of 'distutils' to use setuptools' version
-         sys.modules["distutils"] = module
- 
- # Apply the monkey patch before any related imports
- patch_undetected()
+# --- Monkey-Patch undetected_chromedriver to remove distutils dependency ---
+import sys
+import importlib.util
+
+def patch_undetected():
+    # Look for setuptools' bundled distutils
+    spec = importlib.util.find_spec("setuptools._distutils")
+    if spec:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        # Redirect any import of 'distutils' to use setuptools' version
+        sys.modules["distutils"] = module
+
+# Apply the monkey patch before any related imports
+patch_undetected()
 
 # --- Now import everything else ---
 import streamlit as st
