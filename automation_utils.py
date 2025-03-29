@@ -1,9 +1,12 @@
+# automation_utils.py
+
 import undetected_chromedriver as uc
 import random
 import time
 import itertools
 import requests
 import openai
+from packaging.version import Version as LooseVersion
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 
@@ -78,7 +81,6 @@ def choose_money_site(question_text):
 def generate_ai_response(question_text, additional_prompt, use_chatgpt=True):
     if not use_chatgpt:
         return "Default answer: " + question_text[:100] + "..."
-    # Smart prompt including a plug for a money site from the smart funnel
     site_name, site_details, complexity = choose_money_site(question_text)
     plug = f"Click here for more details: {site_details['url']}. {site_details['description']}."
     prompt = (
@@ -99,3 +101,89 @@ def generate_ai_response(question_text, additional_prompt, use_chatgpt=True):
         return response.choices[0].text.strip()
     except Exception as e:
         return f"Error generating answer: {e}"
+
+def solve_captcha_if_present(driver):
+    """
+    Checks for a CAPTCHA on the page and uses 2Captcha to solve it if found.
+    Returns True if a CAPTCHA was solved, else False.
+    """
+    # Look for a data-sitekey in the page source
+    page_html = driver.page_source
+    captcha_type = None
+    site_key = None
+    if "data-sitekey" in page_html:
+        start = page_html.find('data-sitekey="') + len('data-sitekey="')
+        end = page_html.find('"', start)
+        site_key = page_html[start:end]
+        captcha_type = "recaptcha"
+    if not site_key:
+        # Try checking for an iframe with a src containing "sitekey=" or "k="
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        for iframe in iframes:
+            src = iframe.get_attribute("src")
+            if src and ("sitekey=" in src or "k=" in src):
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(src).query)
+                site_key = qs.get("sitekey", qs.get("k", [None]))[0]
+                captcha_type = "recaptcha"
+                break
+    if not site_key or not captcha_type:
+        return False
+    api_key = ""
+    try:
+        api_key = driver.execute_script("return window.streamlit_secrets.captcha.api_key")
+    except Exception:
+        # Fallback to st.secrets (if accessible) or environment variable
+        try:
+            api_key = st.secrets["captcha"]["api_key"]
+        except Exception:
+            api_key = ""
+    if not api_key:
+        print("2Captcha API key not found.")
+        return False
+
+    # Submit CAPTCHA solving request to 2Captcha
+    data = {
+        "key": api_key,
+        "method": "userrecaptcha",
+        "googlekey": site_key,
+        "pageurl": driver.current_url,
+        "json": 1
+    }
+    try:
+        resp = requests.post("https://2captcha.com/in.php", data=data).json()
+    except Exception as e:
+        print("Error sending CAPTCHA request:", e)
+        return False
+
+    if resp.get("status") != 1:
+        print("Error from 2Captcha:", resp.get("request"))
+        return False
+
+    captcha_id = resp.get("request")
+    token = None
+    for _ in range(20):
+        time.sleep(5)
+        try:
+            r = requests.get(f"https://2captcha.com/res.php?key={api_key}&action=get&id={captcha_id}&json=1").json()
+        except Exception as e:
+            print("Error polling 2Captcha:", e)
+            continue
+        if r.get("status") == 1:
+            token = r.get("request")
+            break
+        elif r.get("request") != "CAPCHA_NOT_READY":
+            print("2Captcha error:", r.get("request"))
+            break
+
+    if not token:
+        return False
+
+    # Inject the token into the CAPTCHA response field (for reCAPTCHA)
+    driver.execute_script("""
+        document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => {
+            el.style.display = 'block';
+            el.value = arguments[0];
+        });
+    """, token)
+    return True
