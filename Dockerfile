@@ -36,7 +36,6 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
-    tor \
     proxychains4 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -62,25 +61,24 @@ RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) \
 RUN ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome \
     && ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome
 
-# Configure Tor for IP rotation
-RUN echo "SocksPort 9050" >> /etc/tor/torrc \
-    && echo "ControlPort 9051" >> /etc/tor/torrc \
-    && echo "CookieAuthentication 1" >> /etc/tor/torrc \
-    && echo "MaxCircuitDirtiness 60" >> /etc/tor/torrc
-
-# Configure ProxyChains for Tor integration
+# Configure ProxyChains for proxy integration
 RUN echo "strict_chain" > /etc/proxychains4.conf \
     && echo "proxy_dns" >> /etc/proxychains4.conf \
     && echo "remote_dns_subnet 224" >> /etc/proxychains4.conf \
     && echo "tcp_read_time_out 15000" >> /etc/proxychains4.conf \
     && echo "tcp_connect_time_out 8000" >> /etc/proxychains4.conf \
     && echo "[ProxyList]" >> /etc/proxychains4.conf \
-    && echo "socks5 127.0.0.1 9050" >> /etc/proxychains4.conf
+    && echo "# Add your proxies here" >> /etc/proxychains4.conf \
+    && echo "# Example: http 11.22.33.44 3128" >> /etc/proxychains4.conf
 
-# Set environment variable for display and headless mode
+# Set environment variables
 ENV DISPLAY=:99
 ENV CHROME_HEADLESS=true
 ENV PYTHONUNBUFFERED=1
+ENV PORT=10000
+
+# Create data directory for persistent storage
+RUN mkdir -p /app/data/debug_screenshots
 
 # Set working directory
 WORKDIR /app
@@ -104,19 +102,16 @@ autorestart=true\n\n\
 [program:x11vnc]\n\
 command=x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb\n\
 autorestart=true\n\n\
-[program:tor]\n\
-command=service tor start\n\
-autorestart=true\n\n\
 [program:streamlit]\n\
-command=streamlit run main.py --server.port=10000 --server.address=0.0.0.0\n\
+command=streamlit run main.py --server.port=${PORT} --server.address=0.0.0.0\n\
 autorestart=true\n\
 stdout_logfile=/dev/stdout\n\
 stdout_logfile_maxbytes=0\n\
 stderr_logfile=/dev/stderr\n\
 stderr_logfile_maxbytes=0\n" > /etc/supervisor/conf.d/supervisord.conf
 
-# Expose ports: 10000 for Streamlit UI, 5900 for VNC, 9050 for Tor
-EXPOSE 10000 5900 8501 9050 9051
+# Expose ports: 10000 for Streamlit UI, 5900 for VNC
+EXPOSE 10000 5900 8501
 
 # Print verification information at the end of the build
 RUN echo "Chrome path: $(which google-chrome-stable)" \
@@ -124,5 +119,5 @@ RUN echo "Chrome path: $(which google-chrome-stable)" \
     && echo "Chromedriver path: $(which chromedriver)" \
     && echo "Chromedriver version: $(chromedriver --version)"
 
-# Make sure port 10000 is used for Streamlit in render.com
+# Make supervisord the entrypoint
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
