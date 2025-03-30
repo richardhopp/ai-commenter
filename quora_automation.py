@@ -25,6 +25,7 @@ def find_answer_field(driver, timeout=15):
             )
             driver.execute_script("arguments[0].scrollIntoView(true);", element)
             element.click()  # Ensure focus
+            print("Found answer field using selector:", selector)
             return element
         except Exception as e:
             print("Answer field not found with selector", selector, ":", e)
@@ -44,6 +45,15 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
         pwd_field.send_keys(password)
         pwd_field.send_keys(Keys.ENTER)
         time.sleep(5)
+        
+        # Confirm that login was successful by waiting for an element that appears after login.
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/profile') or contains(text(),'Home')]"))
+            )
+            print("User appears to be logged in.")
+        except Exception as e:
+            print("Login confirmation element not found; user might not be logged in.", e)
         
         if "login" in driver.current_url.lower():
             if solve_captcha_if_present(driver):
@@ -70,6 +80,7 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
                     driver.execute_script("arguments[0].scrollIntoView(true);", answer_btn)
                     answer_btn.click()
                     answer_clicked = True
+                    print("Clicked Answer button using selector:", sel)
                     break
                 except Exception as e:
                     print("Answer button not found with selector", sel, ":", e)
