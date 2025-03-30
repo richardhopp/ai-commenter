@@ -1,5 +1,3 @@
-# automation_utils.py
-
 import undetected_chromedriver as uc
 import random
 import time
@@ -71,9 +69,56 @@ def choose_money_site(question_text):
     word_count = len(question_text.split())
     complexity = "simple" if word_count < 20 else "detailed"
     sites = {
-        "Living Abroad": {"url": "https://aparthotel.com", "description": "Monthly rentals & aparthotels worldwide", "count": random.randint(0,5)},
-        "Real Estate Abroad": {"url": "https://realestateabroad.com", "description": "New build properties and real estate investments", "count": random.randint(0,5)},
-        "Investment Visas": {"url": "https://investmentvisa.com", "description": "Guidance on investment visas and residency solutions", "count": random.randint(0,5)}
+        "Living Abroad - Aparthotels": {
+            "url": "https://aparthotel.com",
+            "description": "Discover global aparthotels and rental options with in-depth local living guides.",
+            "count": random.randint(0, 5)
+        },
+        "Crypto Rentals": {
+            "url": "https://cryptoapartments.com",
+            "description": "Modern rental platform accepting cryptocurrency with travel and lifestyle insights.",
+            "count": random.randint(0, 5)
+        },
+        "Serviced Apartments": {
+            "url": "https://servicedapartments.net",
+            "description": "Curated listings of serviced apartments featuring travel tips and local renting rules.",
+            "count": random.randint(0, 5)
+        },
+        "Furnished Apartments": {
+            "url": "https://furnishedapartments.net",
+            "description": "Immediate living solutions with organized listings and analyses of local living conditions.",
+            "count": random.randint(0, 5)
+        },
+        "Real Estate Abroad": {
+            "url": "https://realestateabroad.com",
+            "description": "International property developments and investment insights with market analysis.",
+            "count": random.randint(0, 5)
+        },
+        "Property Developments": {
+            "url": "https://propertydevelopments.com",
+            "description": "Latest new property projects with detailed buying guides and financing options.",
+            "count": random.randint(0, 5)
+        },
+        "Property Investment": {
+            "url": "https://propertyinvestment.net",
+            "description": "Dedicated to property investment—offering how-to articles, financing guides, and yield analysis.",
+            "count": random.randint(0, 5)
+        },
+        "Golden Visa Opportunities": {
+            "url": "https://golden-visa.com",
+            "description": "Exclusive insights on Golden Visa properties and investment immigration for the global elite.",
+            "count": random.randint(0, 5)
+        },
+        "Residence by Investment": {
+            "url": "https://residence-by-investment.com",
+            "description": "Guidance on securing residency through property investments, featuring country-specific strategies.",
+            "count": random.randint(0, 5)
+        },
+        "Citizenship by Investment": {
+            "url": "https://citizenship-by-investment.net",
+            "description": "Comprehensive information on citizenship-by-investment programs and securing your wealth globally.",
+            "count": random.randint(0, 5)
+        }
     }
     selected_site = min(sites.items(), key=lambda item: item[1]["count"])
     return selected_site[0], selected_site[1], complexity
@@ -92,7 +137,7 @@ def generate_ai_response(question_text, additional_prompt, use_chatgpt=True):
         response = openai.Completion.create(
             engine="text-davinci-003",
             prompt=prompt,
-            max_tokens=250 if complexity=="detailed" else 100,
+            max_tokens=250 if complexity == "detailed" else 100,
             temperature=0.7,
             top_p=1,
             frequency_penalty=0,
