@@ -37,8 +37,8 @@ def init_driver(proxy_address=None):
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
     
-    # Attempt to find the Chromium binary using shutil.which
-    possible_bins = ["chromium", "chromium-browser", "google-chrome"]
+    # Attempt to find the browser binary using shutil.which
+    possible_bins = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]
     binary_path = None
     for b in possible_bins:
         found = shutil.which(b)
@@ -47,10 +47,10 @@ def init_driver(proxy_address=None):
             binary_path = found
             break
     if binary_path:
-        print(f"[init_driver] Found chromium binary at: {binary_path}")
+        print(f"[init_driver] Found browser binary at: {binary_path}")
         options.binary_location = binary_path
     else:
-        print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
+        print("[init_driver] WARNING: No browser binary found via which(). Not setting binary_location.")
     
     # Find chromedriver and copy to a temporary location to fix permissions
     possible_drivers = ["chromedriver", "chromium-driver"]
@@ -227,7 +227,7 @@ def solve_captcha_if_present(driver):
                 break
     if not site_key or not captcha_type:
         return False
-    # Load CAPTCHA API key from environment variables instead of st.secrets
+    # Load CAPTCHA API key from environment variables
     api_key = os.environ.get("CAPTCHA_API_KEY", "")
     if not api_key:
         print("2Captcha API key not found in environment variables.")
