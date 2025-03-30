@@ -60,7 +60,7 @@ RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) \
 RUN ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome \
     && ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome
 
-# Set environment variable for display and headless mode (set to true for headless mode)
+# Set environment variable for display and headless mode
 ENV DISPLAY=:99
 ENV CHROME_HEADLESS=true
 
