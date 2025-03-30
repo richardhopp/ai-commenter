@@ -7,7 +7,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from automation_utils import init_driver, solve_captcha_if_present, simulate_human_behavior, _randomize_typing_speed
+from automation_utils import init_driver, solve_captcha_if_present, simulate_human_behavior, randomize_typing_speed
 
 logger = logging.getLogger(__name__)
 
