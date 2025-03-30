@@ -1,7 +1,7 @@
 streamlit
 selenium
 requests
-openai
+openai==0.28
 beautifulsoup4
 packaging
 undetected-chromedriver==3.5.5
