@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ai-commenter
+    env: docker
+    region: oregon
+    plan: standard
+    branch: main
+    numInstances: 1
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CHROME_HEADLESS
+        value: "true"
+      - key: OPENAI_API_KEY
+        fromDatabase:
+          name: ai-commenter-env
+          property: OPENAI_API_KEY
+      - key: CAPTCHA_API_KEY
+        fromDatabase:
+          name: ai-commenter-env
+          property: CAPTCHA_API_KEY
+      # Add other environment variables as needed
+    
+    # These settings enable VNC for debugging if needed
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 10
