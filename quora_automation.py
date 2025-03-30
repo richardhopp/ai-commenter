@@ -1,3 +1,4 @@
+import os
 import random
 import time
 from selenium.webdriver.common.by import By
@@ -31,7 +32,13 @@ def find_answer_field(driver, timeout=15):
             print("Answer field not found with selector", selector, ":", e)
     raise Exception("Unable to locate an answer input field using any known selector.")
 
-def quora_login_and_post(username, password, content, question_url=None, proxy=None):
+def quora_login_and_post(username=None, password=None, content="", question_url=None, proxy=None):
+    # If credentials are not passed in, load them from environment variables
+    if not username:
+        username = os.environ.get("QUORA_USER1", "")
+    if not password:
+        password = os.environ.get("QUORA_PASS1", "")
+    
     driver = init_driver(proxy)
     try:
         driver.set_page_load_timeout(30)
@@ -46,7 +53,7 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
         pwd_field.send_keys(Keys.ENTER)
         time.sleep(5)
         
-        # Confirm that login was successful by waiting for an element that appears after login.
+        # Confirm that login was successful by waiting for a post-login element.
         try:
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/profile') or contains(text(),'Home')]"))
