@@ -1,3 +1,4 @@
+import os
 import random
 import time
 from selenium.webdriver.common.by import By
@@ -7,7 +8,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from automation_utils import init_driver, solve_captcha_if_present
 
-def tripadvisor_login_and_post(username, password, content, thread_url, proxy=None):
+def tripadvisor_login_and_post(username=None, password=None, content="", thread_url="", proxy=None):
+    # Load credentials from environment variables if not provided.
+    if not username:
+        username = os.environ.get("TRIPADVISOR_USER1", "")
+    if not password:
+        password = os.environ.get("TRIPADVISOR_PASS1", "")
+    
     driver = init_driver(proxy)
     try:
         driver.set_page_load_timeout(30)
@@ -23,7 +30,7 @@ def tripadvisor_login_and_post(username, password, content, thread_url, proxy=No
         except Exception as e:
             print("Consent button not found:", e)
         
-        # Click the "Sign in" link
+        # Click the "Sign in" link using multiple selectors
         try:
             sign_in_link = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.LINK_TEXT, "Sign in"))
