@@ -36,6 +36,8 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
+    tor \
+    proxychains4 \
     && rm -rf /var/lib/apt/lists/*
 
 # Add Google Chrome repository and install google-chrome-stable
@@ -60,9 +62,25 @@ RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) \
 RUN ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome \
     && ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome
 
+# Configure Tor for IP rotation
+RUN echo "SocksPort 9050" >> /etc/tor/torrc \
+    && echo "ControlPort 9051" >> /etc/tor/torrc \
+    && echo "CookieAuthentication 1" >> /etc/tor/torrc \
+    && echo "MaxCircuitDirtiness 60" >> /etc/tor/torrc
+
+# Configure ProxyChains for Tor integration
+RUN echo "strict_chain" > /etc/proxychains4.conf \
+    && echo "proxy_dns" >> /etc/proxychains4.conf \
+    && echo "remote_dns_subnet 224" >> /etc/proxychains4.conf \
+    && echo "tcp_read_time_out 15000" >> /etc/proxychains4.conf \
+    && echo "tcp_connect_time_out 8000" >> /etc/proxychains4.conf \
+    && echo "[ProxyList]" >> /etc/proxychains4.conf \
+    && echo "socks5 127.0.0.1 9050" >> /etc/proxychains4.conf
+
 # Set environment variable for display and headless mode
 ENV DISPLAY=:99
 ENV CHROME_HEADLESS=true
+ENV PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /app
@@ -86,12 +104,19 @@ autorestart=true\n\n\
 [program:x11vnc]\n\
 command=x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb\n\
 autorestart=true\n\n\
+[program:tor]\n\
+command=service tor start\n\
+autorestart=true\n\n\
 [program:streamlit]\n\
 command=streamlit run main.py --server.port=10000 --server.address=0.0.0.0\n\
-autorestart=true\n" > /etc/supervisor/conf.d/supervisord.conf
+autorestart=true\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n" > /etc/supervisor/conf.d/supervisord.conf
 
-# Expose ports: 10000 for Streamlit UI, 5900 for VNC
-EXPOSE 10000 5900 8501
+# Expose ports: 10000 for Streamlit UI, 5900 for VNC, 9050 for Tor
+EXPOSE 10000 5900 8501 9050 9051
 
 # Print verification information at the end of the build
 RUN echo "Chrome path: $(which google-chrome-stable)" \
