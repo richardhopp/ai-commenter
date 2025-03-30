@@ -15,9 +15,13 @@ RUN apt-get update && apt-get install -y \
 
 # Set environment variable for display
 ENV DISPLAY=:99
+# Optionally, set a variable for headless mode (if you want to toggle in your code)
+ENV CHROME_HEADLESS=false
+
+# Set working directory
+WORKDIR /app
 
 # Copy requirements and install Python packages
-WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
