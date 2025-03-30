@@ -1,403 +1,398 @@
 import os
-import random
 import time
 import logging
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
-from automation_utils import init_driver, solve_captcha_if_present, simulate_human_behavior, _randomize_typing_speed
+import random
+from typing import List, Dict, Any, Optional, Tuple, Union
+from datetime import datetime
 
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
-def find_answer_field(driver, timeout=15):
-    """
-    Try multiple selectors to find the answer input field.
-    Uses a variety of selectors to improve reliability.
-    """
-    selectors = [
-        (By.CSS_SELECTOR, "div[contenteditable='true'][role='textbox']"),
-        (By.CSS_SELECTOR, "div[role='textbox']"),
-        (By.CSS_SELECTOR, "div[contenteditable='true']"),
-        (By.CSS_SELECTOR, "div.q-box div[contenteditable='true']"),
-        (By.XPATH, "//div[@data-placeholder='Write your answer']"),
-        (By.TAG_NAME, "textarea"),
-        (By.XPATH, "//*[contains(@placeholder, 'Write your answer')]")
-    ]
-    
-    for by, selector in selectors:
-        try:
-            element = WebDriverWait(driver, timeout).until(
-                EC.element_to_be_clickable((by, selector))
-            )
-            
-            # First scroll the element into view
-            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
-            time.sleep(random.uniform(0.5, 1))
-            
-            # Simulate human behavior before clicking
-            simulate_human_behavior(driver, element)
-            
-            # Try clicking with JavaScript if regular click fails
-            try:
-                element.click()  # Regular click
-            except ElementClickInterceptedException:
-                # If regular click fails, try JavaScript click
-                driver.execute_script("arguments[0].click();", element)
-                
-            logger.info(f"[quora] Found answer field using selector: {selector}")
-            
-            # Small pause after focusing the element
-            time.sleep(random.uniform(0.5, 1.5))
-            return element
-        except Exception as e:
-            logger.debug(f"[quora] Answer field not found with selector {selector}: {e}")
-    
-    raise Exception("[quora] Unable to locate an answer input field using any known selector.")
+# Import automation utilities
+from automation_utils import init_driver, solve_captcha_if_present, simulate_human_behavior, randomize_typing_speed
+from automation_utils import wait_for_element, wait_for_elements, safe_click, fill_text_field
+from automation_utils import scroll_into_view, take_screenshot, check_for_errors, generate_content_with_openai
+from automation_utils import save_cookies, load_cookies, cleanup_driver
 
-def quora_login_and_post(username=None, password=None, content="", question_url=None, proxy=None):
+# Quora-specific constants
+QUORA_URL = "https://www.quora.com"
+QUORA_LOGIN_URL = "https://www.quora.com/login"
+QUORA_ADD_QUESTION_URL = "https://www.quora.com/ask"
+
+# Quora selectors
+LOGIN_SELECTORS = {
+    "email_input": (By.ID, "email"),
+    "password_input": (By.ID, "password"),
+    "login_button": (By.CSS_SELECTOR, "button[type='submit']"),
+    "error_message": (By.CSS_SELECTOR, ".login_error_message"),
+}
+
+QUESTION_SELECTORS = {
+    "question_input": (By.CSS_SELECTOR, "textarea.qu-borderAll"),
+    "submit_button": (By.CSS_SELECTOR, "button[type='submit']"),
+    "topic_input": (By.CSS_SELECTOR, "input[placeholder='Add topics']"),
+    "first_topic_suggestion": (By.CSS_SELECTOR, ".qu-dynamicFontSize--small"),
+}
+
+# Check if required imports are available
+try:
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.common.exceptions import (
+        TimeoutException, 
+        NoSuchElementException, 
+        ElementClickInterceptedException,
+        StaleElementReferenceException
+    )
+except ImportError as e:
+    logger.error(f"Failed to import required modules: {str(e)}")
+    raise
+
+def quora_login(driver, email: str, password: str) -> bool:
     """
-    Log in to Quora and either:
-    1. Answer an existing question (when question_url is provided)
-    2. Create a new question (when question_url is None)
+    Log in to Quora with the provided credentials.
     
-    Enhanced with anti-detection measures and human-like behavior
+    Args:
+        driver: The webdriver instance
+        email: User's email address
+        password: User's password
+        
+    Returns:
+        bool: True if login successful, False otherwise
     """
-    # If credentials are not passed in, load them from environment variables.
-    if not username:
-        username = os.environ.get("QUORA_USER1", "")
-    if not password:
-        password = os.environ.get("QUORA_PASS1", "")
-    
-    logger.info(f"[quora] Initializing Quora automation for {'answer' if question_url else 'question'}")
-    
-    driver = init_driver(proxy)
     try:
-        driver.set_page_load_timeout(40)
+        logger.info("Navigating to Quora login page")
+        driver.get(QUORA_LOGIN_URL)
         
-        # Start with the Quora homepage then navigate to login for a more natural flow
-        driver.get("https://www.quora.com")
-        time.sleep(random.uniform(2, 4))
+        # Wait for page to load
+        time.sleep(3)
         
-        # Check for cookie notice and handle if present
-        try:
-            cookie_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Accept') or contains(text(), 'I agree')]"))
-            )
-            simulate_human_behavior(driver, cookie_btn)
-            cookie_btn.click()
-            time.sleep(random.uniform(0.5, 1.5))
-        except (TimeoutException, NoSuchElementException):
-            logger.info("[quora] No cookie notice found or already accepted")
+        # Check for CAPTCHA
+        solve_captcha_if_present(driver)
         
-        # Find and click login link if we're not already on the login page
-        if "login" not in driver.current_url:
-            login_selectors = [
-                (By.XPATH, "//a[contains(text(), 'Login')]"),
-                (By.XPATH, "//a[contains(text(), 'Log In')]"),
-                (By.XPATH, "//button[contains(text(), 'Login')]"),
-                (By.XPATH, "//button[contains(text(), 'Log In')]")
-            ]
-            
-            for selector_type, selector in login_selectors:
-                try:
-                    login_btn = WebDriverWait(driver, 5).until(
-                        EC.element_to_be_clickable((selector_type, selector))
-                    )
-                    simulate_human_behavior(driver, login_btn)
-                    login_btn.click()
-                    logger.info(f"[quora] Clicked login button with selector: {selector}")
-                    time.sleep(random.uniform(1, 2))
-                    break
-                except (TimeoutException, NoSuchElementException):
-                    continue
+        # Fill in email
+        email_input = wait_for_element(driver, *LOGIN_SELECTORS["email_input"])
+        if not email_input:
+            logger.error("Email input field not found")
+            take_screenshot(driver, "login_email_not_found.png")
+            return False
         
-        # If we're still not on the login page, navigate directly
-        if "login" not in driver.current_url:
-            driver.get("https://www.quora.com/login")
-            time.sleep(random.uniform(2, 3))
+        fill_text_field(driver, email_input, email)
+        simulate_human_behavior(driver)
         
-        # Find email and password fields
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "email")))
-        email_field = driver.find_element(By.NAME, "email")
-        pwd_field = driver.find_element(By.NAME, "password")
+        # Fill in password
+        password_input = wait_for_element(driver, *LOGIN_SELECTORS["password_input"])
+        if not password_input:
+            logger.error("Password input field not found")
+            take_screenshot(driver, "login_password_not_found.png")
+            return False
         
-        # Clear fields and type with human-like delays
-        email_field.clear()
-        simulate_human_behavior(driver, email_field)
+        fill_text_field(driver, password_input, password)
+        simulate_human_behavior(driver)
         
-        # Type email with random delays
-        for char, delay in _randomize_typing_speed(username):
-            email_field.send_keys(char)
-            time.sleep(delay)
+        # Click login button
+        login_button = wait_for_element(driver, *LOGIN_SELECTORS["login_button"])
+        if not login_button:
+            logger.error("Login button not found")
+            take_screenshot(driver, "login_button_not_found.png")
+            return False
         
-        # Pause between fields
-        time.sleep(random.uniform(0.8, 1.5))
+        safe_click(driver, login_button)
         
-        # Clear password field and type with human-like delays
-        pwd_field.clear()
-        simulate_human_behavior(driver, pwd_field)
-        
-        # Type password with random delays
-        for char, delay in _randomize_typing_speed(password):
-            pwd_field.send_keys(char)
-            time.sleep(delay)
-        
-        # Random pause before submission
-        time.sleep(random.uniform(0.8, 2.0))
-        
-        # Find and click the login button instead of pressing Enter
-        login_button_selectors = [
-            (By.XPATH, "//button[contains(text(), 'Login')]"),
-            (By.XPATH, "//button[contains(text(), 'Log In')]"),
-            (By.CSS_SELECTOR, "button[type='submit']")
-        ]
-        
-        login_clicked = False
-        for selector_type, selector in login_button_selectors:
-            try:
-                login_btn = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((selector_type, selector))
-                )
-                simulate_human_behavior(driver, login_btn)
-                login_btn.click()
-                login_clicked = True
-                logger.info(f"[quora] Clicked login button with selector: {selector}")
-                break
-            except (TimeoutException, NoSuchElementException):
-                continue
-        
-        # If no login button found, use Enter key
-        if not login_clicked:
-            pwd_field.send_keys(Keys.ENTER)
-            logger.info("[quora] Used Enter key to submit login form")
-        
-        # Wait for login to complete
+        # Wait for login to complete and verify
         time.sleep(5)
         
-        # Confirm login was successful by checking for user-specific elements
+        # Check for error messages
         try:
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.XPATH, 
-                    "//a[contains(@href, '/profile') or contains(@href, '/notifications') or contains(text(),'Home')]"))
-            )
-            logger.info("[quora] User successfully logged in")
-        except (TimeoutException, NoSuchElementException) as e:
-            logger.warning(f"[quora] Login confirmation element not found: {e}")
-            
-            # Check if we're still on the login page and try CAPTCHA solution
-            if "login" in driver.current_url.lower():
-                if solve_captcha_if_present(driver):
-                    logger.info("[quora] CAPTCHA detected and solved, retrying login")
-                    pwd_field = driver.find_element(By.NAME, "password")
-                    pwd_field.send_keys(Keys.ENTER)
-                    time.sleep(5)
+            error_element = driver.find_element(*LOGIN_SELECTORS["error_message"])
+            if error_element.is_displayed():
+                logger.error(f"Login failed: {error_element.text}")
+                take_screenshot(driver, "login_error.png")
+                return False
+        except NoSuchElementException:
+            # No error message found, which is good
+            pass
         
-        # ANSWER EXISTING QUESTION
-        if question_url:
-            # Navigate to the question
-            driver.get(question_url)
-            WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            
-            # Scroll down a bit and pause to simulate reading
-            driver.execute_script("window.scrollBy(0, 300);")
-            time.sleep(random.uniform(3, 7))
-            
-            # Try clicking the "Answer" button using multiple selectors
-            answer_clicked = False
-            answer_selectors = [
-                (By.XPATH, "//button[text()='Answer' or text()='Write answer']"),
-                (By.XPATH, "//button[contains(text(), 'Answer')]"),
-                (By.XPATH, "//a[contains(text(), 'Answer')]"),
-                (By.CSS_SELECTOR, "button.q-write-btn")
-            ]
-            
-            for selector_type, selector in answer_selectors:
-                try:
-                    answer_btn = WebDriverWait(driver, 5).until(
-                        EC.element_to_be_clickable((selector_type, selector))
-                    )
-                    # Scroll to button and simulate human behavior
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", answer_btn)
-                    time.sleep(random.uniform(0.5, 1.5))
-                    
-                    simulate_human_behavior(driver, answer_btn)
-                    answer_btn.click()
-                    answer_clicked = True
-                    logger.info(f"[quora] Clicked Answer button using selector: {selector}")
-                    break
-                except Exception as e:
-                    logger.debug(f"[quora] Answer button not found with selector {selector}: {e}")
-            
-            if not answer_clicked:
-                logger.info("[quora] No clickable Answer button found; proceeding assuming editor is already open")
-            
-            # Give the answer editor time to load
-            time.sleep(random.uniform(2, 4))
-            
-            # Locate the answer input field using the helper function
-            try:
-                answer_box = find_answer_field(driver, timeout=15)
-            except Exception as e:
-                raise Exception(f"[quora] Unable to locate answer input field: {e}")
-            
-            # Type content with human-like delays
-            for char, delay in _randomize_typing_speed(content, min_delay=0.02, max_delay=0.15):
-                answer_box.send_keys(char)
-                time.sleep(delay)
-            
-            # Random pause after typing
-            time.sleep(random.uniform(2, 4))
-            
-            # Attempt to click the submit button with multiple possible selectors
-            submit_selectors = [
-                (By.XPATH, "//button[contains(text(), 'Submit')]"),
-                (By.XPATH, "//button[contains(text(), 'Post')]"),
-                (By.XPATH, "//button[contains(text(), 'Answer')]"),
-                (By.CSS_SELECTOR, "button.submit_button")
-            ]
-            
-            submit_clicked = False
-            for selector_type, selector in submit_selectors:
-                try:
-                    submit_btn = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((selector_type, selector))
-                    )
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", submit_btn)
-                    time.sleep(random.uniform(0.5, 1.5))
-                    
-                    simulate_human_behavior(driver, submit_btn)
-                    submit_btn.click()
-                    submit_clicked = True
-                    logger.info(f"[quora] Clicked Submit button using selector: {selector}")
-                    break
-                except Exception as e:
-                    logger.debug(f"[quora] Submit button not found with selector {selector}: {e}")
-            
-            if not submit_clicked:
-                logger.warning("[quora] Submit button not found; using keyboard shortcut")
-                # Use keyboard shortcut as fallback
-                answer_box.send_keys(Keys.CONTROL + Keys.ENTER)
-                logger.info("[quora] Used Ctrl+Enter to submit answer")
-            
-            # Wait for the submission to complete
-            time.sleep(random.uniform(5, 7))
-            
-        # CREATE NEW QUESTION
+        # Check if we're redirected to the feed or home page
+        if "feed" in driver.current_url or driver.current_url == QUORA_URL:
+            logger.info("Login successful")
+            # Save cookies for later use
+            save_cookies(driver, "quora_cookies.json")
+            return True
         else:
-            # Navigate to the homepage
-            driver.get("https://www.quora.com/")
-            time.sleep(random.uniform(3, 5))
+            logger.error(f"Login might have failed. Current URL: {driver.current_url}")
+            take_screenshot(driver, "login_unexpected_page.png")
+            return False
             
-            # Try to find and click the "Add Question" button
-            add_question_clicked = False
-            add_question_selectors = [
-                (By.CSS_SELECTOR, "[data-functional-selector='add-question-button']"),
-                (By.XPATH, "//button[contains(text(), 'Add Question')]"),
-                (By.XPATH, "//a[contains(text(), 'Add Question')]"),
-                (By.XPATH, "//span[contains(text(), 'Add Question')]/parent::button"),
-                (By.XPATH, "//div[contains(@class, 'selector_add_question')]")
-            ]
-            
-            for selector_type, selector in add_question_selectors:
-                try:
-                    add_btn = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((selector_type, selector))
-                    )
-                    simulate_human_behavior(driver, add_btn)
-                    add_btn.click()
-                    add_question_clicked = True
-                    logger.info(f"[quora] Clicked Add Question button using selector: {selector}")
-                    break
-                except Exception as e:
-                    logger.debug(f"[quora] Add Question button not found with selector {selector}: {e}")
-            
-            if not add_question_clicked:
-                logger.error("[quora] Could not find Add Question button")
-                return False
-            
-            # Wait for the question dialog to open
-            time.sleep(random.uniform(2, 3))
-            
-            # Find the question input field
-            question_input_selectors = [
-                (By.CSS_SELECTOR, "[contenteditable='true']"),
-                (By.XPATH, "//div[@contenteditable='true']"),
-                (By.TAG_NAME, "textarea"),
-                (By.XPATH, "//div[contains(@class, 'question_modal')]//div[@contenteditable='true']")
-            ]
-            
-            question_input = None
-            for selector_type, selector in question_input_selectors:
-                try:
-                    question_input = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((selector_type, selector))
-                    )
-                    simulate_human_behavior(driver, question_input)
-                    question_input.click()
-                    logger.info(f"[quora] Found question input field using selector: {selector}")
-                    break
-                except Exception as e:
-                    logger.debug(f"[quora] Question input not found with selector {selector}: {e}")
-            
-            if not question_input:
-                logger.error("[quora] Could not find question input field")
-                return False
-            
-            # Type question content with human-like delays
-            for char, delay in _randomize_typing_speed(content, min_delay=0.03, max_delay=0.15):
-                question_input.send_keys(char)
-                time.sleep(delay)
-            
-            # Random pause before submission
-            time.sleep(random.uniform(2, 4))
-            
-            # Try to find and click the submit button
-            post_selectors = [
-                (By.XPATH, "//button[normalize-space()='Add Question' or normalize-space()='Submit']"),
-                (By.XPATH, "//button[contains(text(), 'Add Question')]"),
-                (By.XPATH, "//button[contains(text(), 'Submit')]"),
-                (By.CSS_SELECTOR, "button.submit_button")
-            ]
-            
-            post_clicked = False
-            for selector_type, selector in post_selectors:
-                try:
-                    post_btn = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((selector_type, selector))
-                    )
-                    simulate_human_behavior(driver, post_btn)
-                    post_btn.click()
-                    post_clicked = True
-                    logger.info(f"[quora] Clicked post button using selector: {selector}")
-                    break
-                except Exception as e:
-                    logger.debug(f"[quora] Post button not found with selector {selector}: {e}")
-            
-            if not post_clicked:
-                logger.warning("[quora] Post button not found; using keyboard shortcut")
-                # Use keyboard shortcut as fallback
-                question_input.send_keys(Keys.CONTROL + Keys.ENTER)
-                logger.info("[quora] Used Ctrl+Enter to submit question")
-            
-            # Wait for submission to complete
-            time.sleep(random.uniform(4, 6))
-        
-        # Take a screenshot for verification purposes
-        try:
-            debug_dir = "debug_screenshots"
-            os.makedirs(debug_dir, exist_ok=True)
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            driver.save_screenshot(f"{debug_dir}/quora_{timestamp}.png")
-            logger.info(f"[quora] Saved verification screenshot to {debug_dir}/quora_{timestamp}.png")
-        except Exception as e:
-            logger.error(f"[quora] Failed to save verification screenshot: {e}")
-        
-        return True
     except Exception as e:
-        logger.error(f"[quora] Error during Quora automation: {e}")
+        logger.error(f"Error during login: {str(e)}")
+        take_screenshot(driver, "login_exception.png")
         return False
+
+def add_question_to_quora(driver, question: str, topics: List[str] = None) -> bool:
+    """
+    Add a new question to Quora.
+    
+    Args:
+        driver: The webdriver instance
+        question: The question to post
+        topics: Optional list of topics to tag
+        
+    Returns:
+        bool: True if posting successful, False otherwise
+    """
+    try:
+        logger.info(f"Adding question: {question}")
+        driver.get(QUORA_ADD_QUESTION_URL)
+        
+        # Wait for page to load
+        time.sleep(3)
+        
+        # Fill in question
+        question_input = wait_for_element(driver, *QUESTION_SELECTORS["question_input"])
+        if not question_input:
+            logger.error("Question input field not found")
+            take_screenshot(driver, "question_input_not_found.png")
+            return False
+        
+        fill_text_field(driver, question_input, question)
+        simulate_human_behavior(driver)
+        
+        # Add topics if provided
+        if topics and len(topics) > 0:
+            topic_input = wait_for_element(driver, *QUESTION_SELECTORS["topic_input"])
+            if topic_input:
+                for topic in topics:
+                    fill_text_field(driver, topic_input, topic)
+                    simulate_human_behavior(driver, 1.0, 2.0)
+                    
+                    # Select first suggestion
+                    suggestion = wait_for_element(driver, *QUESTION_SELECTORS["first_topic_suggestion"])
+                    if suggestion:
+                        safe_click(driver, suggestion)
+                        simulate_human_behavior(driver)
+                    else:
+                        # If no suggestion found, just press Enter
+                        topic_input.send_keys(Keys.ENTER)
+                        simulate_human_behavior(driver)
+        
+        # Submit the question
+        submit_button = wait_for_element(driver, *QUESTION_SELECTORS["submit_button"])
+        if not submit_button:
+            logger.error("Submit button not found")
+            take_screenshot(driver, "submit_button_not_found.png")
+            return False
+        
+        safe_click(driver, submit_button)
+        
+        # Wait for submission to complete
+        time.sleep(5)
+        
+        # Check if we're redirected to the question page
+        if "/answer/" in driver.current_url:
+            logger.info("Question added successfully")
+            return True
+        else:
+            logger.error(f"Question submission might have failed. Current URL: {driver.current_url}")
+            take_screenshot(driver, "question_submission_unexpected_page.png")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error adding question: {str(e)}")
+        take_screenshot(driver, "add_question_exception.png")
+        return False
+
+def generate_question(topic: str, style: str = "normal") -> str:
+    """
+    Generate a question for Quora using OpenAI.
+    
+    Args:
+        topic: The topic to generate a question about
+        style: The style of the question (normal, controversial, deep, etc.)
+        
+    Returns:
+        str: Generated question
+    """
+    styles = {
+        "normal": "a straightforward question",
+        "controversial": "a thought-provoking or slightly controversial question",
+        "deep": "a philosophical or deep question",
+        "personal": "a personal experience question",
+        "funny": "a humorous or absurd question",
+        "technical": "a technical or detailed question"
+    }
+    
+    style_prompt = styles.get(style.lower(), styles["normal"])
+    
+    system_prompt = """
+    You are an expert at creating engaging Quora questions. 
+    Create questions that are clear, specific, and likely to generate interesting answers.
+    Do not include any prefixes, suffixes, or explanations in your response.
+    Return only the question text itself.
+    """
+    
+    user_prompt = f"""
+    Generate {style_prompt} for Quora about {topic}.
+    
+    Make sure the question:
+    - Is grammatically correct
+    - Ends with a question mark
+    - Is not too basic or easily searchable
+    - Would encourage detailed responses
+    - Is between 10-20 words for readability
+    - Doesn't include 'Quora' in the question itself
+    """
+    
+    question = generate_content_with_openai(
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+        max_tokens=100,
+        temperature=0.7,
+        fallback_response=f"What are the most interesting aspects of {topic}?"
+    )
+    
+    # Clean up the question
+    question = question.strip().rstrip('.').strip()
+    if not question.endswith('?'):
+        question += '?'
+    
+    return question
+
+def suggest_topics_for_question(question: str, num_topics: int = 3) -> List[str]:
+    """
+    Suggest relevant topics for a Quora question using OpenAI.
+    
+    Args:
+        question: The question to suggest topics for
+        num_topics: Number of topics to suggest
+        
+    Returns:
+        List[str]: List of suggested topics
+    """
+    system_prompt = """
+    You are an expert at tagging Quora questions with appropriate topics.
+    Return only a comma-separated list of topics, without any prefixes, suffixes, or explanations.
+    """
+    
+    user_prompt = f"""
+    Suggest {num_topics} relevant topics for the following Quora question:
+    
+    "{question}"
+    
+    Provide only a comma-separated list of topics.
+    Topics should be:
+    - Short (1-3 words each)
+    - Relevant to the question
+    - Common topics on Quora
+    - Properly capitalized
+    """
+    
+    topics_text = generate_content_with_openai(
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+        max_tokens=100,
+        temperature=0.3,
+        fallback_response="Technology, Science, Education"
+    )
+    
+    # Clean up and format the topics
+    topics = [topic.strip() for topic in topics_text.split(',')]
+    
+    return topics
+
+def quora_login_and_post(email: str, password: str, question: str = None, topic: str = None, headless: bool = True) -> Dict[str, Any]:
+    """
+    Log in to Quora and post a question.
+    
+    Args:
+        email: Quora account email
+        password: Quora account password
+        question: Question to post (if None, one will be generated)
+        topic: Topic to generate a question about (if question is None)
+        headless: Whether to run the browser in headless mode
+        
+    Returns:
+        Dict with status and results
+    """
+    result = {
+        "success": False,
+        "question": question,
+        "url": None,
+        "error": None
+    }
+    
+    driver = None
+    try:
+        # Initialize the webdriver
+        driver = init_driver(headless=headless)
+        
+        # Try to log in
+        login_success = quora_login(driver, email, password)
+        if not login_success:
+            result["error"] = "Failed to log in to Quora"
+            return result
+        
+        # Generate question if not provided
+        if not question and topic:
+            question = generate_question(topic)
+            result["question"] = question
+        elif not question:
+            result["error"] = "Neither question nor topic provided"
+            return result
+        
+        # Generate topics
+        topics = suggest_topics_for_question(question)
+        
+        # Post the question
+        post_success = add_question_to_quora(driver, question, topics)
+        if not post_success:
+            result["error"] = "Failed to post question"
+            return result
+        
+        # Get the URL of the posted question
+        result["url"] = driver.current_url
+        result["success"] = True
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Error in quora_login_and_post: {str(e)}")
+        result["error"] = str(e)
+        if driver:
+            take_screenshot(driver, "quora_automation_exception.png")
+        return result
+    
     finally:
-        driver.quit()
+        # Clean up
+        if driver:
+            cleanup_driver(driver)
+
+# Main function for testing
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    email = os.getenv("QUORA_EMAIL")
+    password = os.getenv("QUORA_PASSWORD")
+    
+    if not email or not password:
+        logger.error("Quora credentials not found in environment variables")
+    else:
+        result = quora_login_and_post(
+            email=email,
+            password=password,
+            topic="Artificial Intelligence",
+            headless=False
+        )
+        
+        print(f"Success: {result['success']}")
+        if result['success']:
+            print(f"Question: {result['question']}")
+            print(f"URL: {result['url']}")
+        else:
+            print(f"Error: {result['error']}")
