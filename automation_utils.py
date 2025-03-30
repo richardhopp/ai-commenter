@@ -7,7 +7,7 @@ import openai
 from packaging.version import Version as LooseVersion
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
-import shutil  # For which()
+import shutil  # For checking binary paths
 
 # List of User-Agent strings
 USER_AGENTS = [
@@ -20,16 +20,13 @@ def _rotate_user_agent():
     return random.choice(USER_AGENTS)
 
 def init_driver(proxy_address=None):
-    """
-    Initialize undetected-chromedriver with stealth settings, trying to locate
-    the chromium binary via shutil.which on Streamlit Cloud.
-    """
     options = uc.ChromeOptions()
-    # Attempt to find a chromium-like binary
+    # Attempt to find a valid Chromium binary using shutil.which
     possible_bins = ["chromium", "chromium-browser", "google-chrome"]
     binary_path = None
     for b in possible_bins:
         found = shutil.which(b)
+        print(f"[init_driver] Checking {b}: {found}")
         if found:
             binary_path = found
             break
@@ -37,7 +34,7 @@ def init_driver(proxy_address=None):
         print(f"[init_driver] Found chromium binary at: {binary_path}")
         options.binary_location = binary_path
     else:
-        print("[init_driver] WARNING: No chromium binary found via which(). The driver may fail.")
+        print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
 
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -46,16 +43,14 @@ def init_driver(proxy_address=None):
     ua = _rotate_user_agent()
     options.add_argument(f"--user-agent={ua}")
     options.add_argument("--disable-blink-features=AutomationControlled")
-
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
-
+    
     driver = uc.Chrome(options=options)
     driver.set_page_load_timeout(30)
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
-    )
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    })
     return driver
 
 def search_google(query, max_results=5):
@@ -67,32 +62,32 @@ def search_google(query, max_results=5):
         elements = driver.find_elements(By.CSS_SELECTOR, "div.yuRUbf a")
         for element in elements[:max_results]:
             results.append(element.get_attribute("href"))
-    except Exception:
-        pass
+    except Exception as e:
+        print("Error during search:", e)
     driver.quit()
     return results
 
 def extract_thread_content(url):
     driver = init_driver()
     driver.get(url)
-    time.sleep(random.uniform(3,6))
+    time.sleep(random.uniform(3, 6))
     html = driver.page_source
     driver.quit()
     soup = BeautifulSoup(html, "html.parser")
+    # Try Quora-style container first
     question_element = soup.find("div", {"class": "question_text"})
     if question_element:
         return question_element.get_text(strip=True)
+    # Otherwise, combine all paragraphs
     paragraphs = soup.find_all("p")
     if paragraphs:
         return " ".join(p.get_text(strip=True) for p in paragraphs)
     return ""
 
 def choose_money_site(question_text):
-    """
-    Creative, expanded money sites list
-    """
     word_count = len(question_text.split())
     complexity = "simple" if word_count < 20 else "detailed"
+    # Expanded list of money sites
     sites = {
         "Living Abroad - Aparthotels": {
             "url": "https://aparthotel.com",
@@ -101,17 +96,17 @@ def choose_money_site(question_text):
         },
         "Crypto Rentals": {
             "url": "https://cryptoapartments.com",
-            "description": "A modern rental platform that accepts cryptocurrency, featuring lifestyle insights.",
+            "description": "A modern rental platform accepting cryptocurrency with categorized listings and lifestyle insights.",
             "count": random.randint(0, 5)
         },
         "Serviced Apartments": {
             "url": "https://servicedapartments.net",
-            "description": "Specializes in serviced apartments with detailed travel tips and local renting rules.",
+            "description": "Curated serviced apartments with travel tips and local renting rules.",
             "count": random.randint(0, 5)
         },
         "Furnished Apartments": {
             "url": "https://furnishedapartments.net",
-            "description": "Focuses on furnished apartments with immediate living solutions and local living analysis.",
+            "description": "Focuses on furnished apartments, offering immediate living solutions and local living analyses.",
             "count": random.randint(0, 5)
         },
         "Real Estate Abroad": {
@@ -121,7 +116,7 @@ def choose_money_site(question_text):
         },
         "Property Developments": {
             "url": "https://propertydevelopments.com",
-            "description": "Focuses on new property projects with detailed buying and financing guides.",
+            "description": "New property projects with detailed guides on buying and financing.",
             "count": random.randint(0, 5)
         },
         "Property Investment": {
@@ -131,17 +126,17 @@ def choose_money_site(question_text):
         },
         "Golden Visa Opportunities": {
             "url": "https://golden-visa.com",
-            "description": "Focuses on Golden Visa properties, investment immigration, and securing wealth globally.",
+            "description": "Focuses on Golden Visa properties and investment immigration for securing global wealth.",
             "count": random.randint(0, 5)
         },
         "Residence by Investment": {
             "url": "https://residence-by-investment.com",
-            "description": "Guides investors on obtaining residency through property investments across multiple markets.",
+            "description": "Guides investors on obtaining residency through property investments across markets.",
             "count": random.randint(0, 5)
         },
         "Citizenship by Investment": {
             "url": "https://citizenship-by-investment.net",
-            "description": "Covers citizenship-by-investment programs, offering global insights and investment tips.",
+            "description": "Covers citizenship-by-investment programs with global insights and investment tips.",
             "count": random.randint(0, 5)
         }
     }
@@ -208,7 +203,6 @@ def solve_captcha_if_present(driver):
     if not api_key:
         print("2Captcha API key not found.")
         return False
-
     data = {
         "key": api_key,
         "method": "userrecaptcha",
