@@ -46,54 +46,31 @@ def init_driver(proxy_address=None):
         if proxy_address:
             options.add_argument(f"--proxy-server={proxy_address}")
         
-        # Attempt to find the browser binary using shutil.which
-        possible_bins = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]
-        binary_path = None
-        for b in possible_bins:
-            found = shutil.which(b)
-            logging.info(f'[init_driver] Checking {b}: {found}')
-            if found:
-                binary_path = found
-                break
-                
         # Set binary location explicitly for containerized environments
         chrome_binary_path = '/usr/bin/google-chrome-stable'
         options.binary_location = chrome_binary_path
         
         logging.info(f'[init_driver] Using Chrome binary at: {chrome_binary_path}')
         
-        # Find chromedriver and copy to a temporary location to fix permissions
-        possible_drivers = ["chromedriver", "chromium-driver"]
-        driver_path = None
-        for p in possible_drivers:
-            found = shutil.which(p)
-            logging.info(f'[init_driver] Checking {p}: {found}')
-            if found:
-                driver_path = found
-                break
-        if driver_path:
-            logging.info(f'[init_driver] Found chromedriver at: {driver_path}')
-            try:
-                tmp_dir = tempfile.gettempdir()
-                tmp_driver = os.path.join(tmp_dir, "chromedriver")
-                shutil.copy2(driver_path, tmp_driver)
-                os.chmod(tmp_driver, 0o755)
-                driver_path = tmp_driver
-                logging.info(f'[init_driver] Copied chromedriver to temporary location: {driver_path}')
-            except Exception as e:
-                logging.warning(f'[init_driver] Warning: Failed to copy chromedriver to temporary location: {e}')
-        else:
-            logging.warning("[init_driver] WARNING: No chromedriver found via which().")
+        # Find chromedriver
+        chromedriver_path = '/usr/local/bin/chromedriver'
+        logging.info(f'[init_driver] Using chromedriver at: {chromedriver_path}')
         
         logging.info('[init_driver] Setting up driver with options...')
-        driver = uc.Chrome(options=options,
-                        browser_executable_path=chrome_binary_path,
-                        driver_executable_path=driver_path,
-                        use_subprocess=False)
+        
+        # Create the Chrome driver with explicit paths
+        driver = uc.Chrome(
+            options=options,
+            browser_executable_path=chrome_binary_path,  # Explicitly set the browser executable path
+            driver_executable_path=chromedriver_path,    # Explicitly set the driver executable path
+            use_subprocess=False
+        )
+        
         driver.set_page_load_timeout(30)
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         })
+        
         logging.info('[init_driver] Driver initialized successfully.')
         return driver
     except Exception as e:
