@@ -8,6 +8,7 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 import shutil
 import os
+import tempfile
 
 # List of User-Agent strings
 USER_AGENTS = [
@@ -22,7 +23,7 @@ def _rotate_user_agent():
 def init_driver(proxy_address=None):
     options = uc.ChromeOptions()
     
-    # Attempt to find a valid Chromium binary using shutil.which
+    # Find a valid Chromium binary using shutil.which
     possible_bins = ["chromium", "chromium-browser", "google-chrome"]
     binary_path = None
     for b in possible_bins:
@@ -37,7 +38,7 @@ def init_driver(proxy_address=None):
     else:
         print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
     
-    # Attempt to find chromedriver
+    # Attempt to find chromedriver and copy it to a temporary location to fix permission issues
     possible_drivers = ["chromedriver", "chromium-driver"]
     driver_path = None
     for p in possible_drivers:
@@ -45,15 +46,19 @@ def init_driver(proxy_address=None):
         print(f"[init_driver] Checking {p}: {found}")
         if found:
             driver_path = found
-            # Attempt to set execute permissions (if possible)
-            try:
-                os.chmod(driver_path, 0o755)
-                print(f"[init_driver] Set execute permissions on {driver_path}")
-            except Exception as e:
-                print(f"[init_driver] Warning: Failed to set permissions on {driver_path}: {e}")
             break
     if driver_path:
         print(f"[init_driver] Found chromedriver at: {driver_path}")
+        # Copy chromedriver to a temporary location and set execute permissions
+        try:
+            tmp_dir = tempfile.gettempdir()
+            tmp_driver = os.path.join(tmp_dir, "chromedriver")
+            shutil.copy2(driver_path, tmp_driver)
+            os.chmod(tmp_driver, 0o755)
+            driver_path = tmp_driver
+            print(f"[init_driver] Copied chromedriver to temporary location: {driver_path}")
+        except Exception as e:
+            print(f"[init_driver] Warning: Failed to copy chromedriver to temporary location: {e}")
     else:
         print("[init_driver] WARNING: No chromedriver found via which().")
     
@@ -64,11 +69,10 @@ def init_driver(proxy_address=None):
     ua = _rotate_user_agent()
     options.add_argument(f"--user-agent={ua}")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
     
-    # Initialize undetected-chromedriver with explicit paths and use_subprocess=False
+    # Initialize undetected-chromedriver with explicit paths and disable subprocess mode for stability
     driver = uc.Chrome(options=options,
                        browser_executable_path=binary_path,
                        driver_executable_path=driver_path,
@@ -193,7 +197,7 @@ def generate_ai_response(question_text, additional_prompt, use_chatgpt=True):
 def solve_captcha_if_present(driver):
     """
     Checks for a CAPTCHA on the page and uses 2Captcha to solve it if found.
-    Returns True if solved, otherwise False.
+    Returns True if a CAPTCHA was solved, else False.
     """
     page_html = driver.page_source
     captcha_type = None
