@@ -79,10 +79,8 @@ st.markdown(
     "threads across multiple sites. A log report of processed URLs and statuses is maintained below."
 )
 
-# Optionally, allow the user to choose whether to run Chrome in headless or headful mode.
-# (When running headful, you can view Chromium's actions via VNC if configured in Docker.)
+# Browser Mode Toggle: Headless vs. Headful (for visible Chrome debugging)
 display_mode = st.radio("Browser Mode", options=["Headless", "Headful"], index=0)
-# Pass this setting to init_driver via an environment variable.
 os.environ["CHROME_HEADLESS"] = "true" if display_mode == "Headless" else "false"
 
 # Initialize session state log
@@ -93,9 +91,11 @@ if "log_records" not in st.session_state:
 # Account Credentials Loader
 #############################################
 def load_accounts(platform):
-    """Load account credentials from environment variables (simulate st.secrets structure)."""
+    """
+    Load account credentials from environment variables.
+    For example, for Quora, expects variables QUORA_USER1, QUORA_PASS1, etc.
+    """
     accounts = []
-    # Example: For Quora, we expect environment variables: QUORA_USER1, QUORA_PASS1, etc.
     idx = 1
     while True:
         user = os.environ.get(f"{platform.upper()}_USER{idx}")
@@ -138,7 +138,6 @@ if mode_choice != "auto":
 
     use_chatgpt = st.checkbox("Generate answer with ChatGPT", value=True)
     if use_chatgpt:
-        # OpenAI API key is already set above.
         prompt_for_analysis = st.text_area("Additional instructions (optional)", "Provide a concise, clear answer.", height=80)
 
     if st.button("Post Content Manually"):
@@ -178,7 +177,7 @@ else:
         default=["quora", "reddit", "tripadvisor"],
         help="Select all sites you want to search and post from."
     )
-    # For each chosen site, load the account from environment variables
+    # Load accounts for each chosen site from environment variables.
     site_account_map = {}
     for site in auto_sites:
         accs = load_accounts(site)
