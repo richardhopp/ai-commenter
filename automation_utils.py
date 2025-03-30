@@ -22,6 +22,21 @@ def _rotate_user_agent():
 
 def init_driver(proxy_address=None):
     options = uc.ChromeOptions()
+    
+    # Check CHROME_HEADLESS env variable (default true)
+    headless = os.environ.get("CHROME_HEADLESS", "true").lower() == "true"
+    if headless:
+        options.add_argument("--headless")
+    
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    ua = _rotate_user_agent()
+    options.add_argument(f"--user-agent={ua}")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    if proxy_address:
+        options.add_argument(f"--proxy-server={proxy_address}")
+    
     # Attempt to find the Chromium binary using shutil.which
     possible_bins = ["chromium", "chromium-browser", "google-chrome"]
     binary_path = None
@@ -37,7 +52,7 @@ def init_driver(proxy_address=None):
     else:
         print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
     
-    # Find chromedriver and copy to temp location to fix permissions
+    # Find chromedriver and copy to a temporary location to fix permissions
     possible_drivers = ["chromedriver", "chromium-driver"]
     driver_path = None
     for p in possible_drivers:
@@ -59,16 +74,6 @@ def init_driver(proxy_address=None):
             print(f"[init_driver] Warning: Failed to copy chromedriver to temporary location: {e}")
     else:
         print("[init_driver] WARNING: No chromedriver found via which().")
-    
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    ua = _rotate_user_agent()
-    options.add_argument(f"--user-agent={ua}")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    if proxy_address:
-        options.add_argument(f"--proxy-server={proxy_address}")
     
     driver = uc.Chrome(options=options,
                        browser_executable_path=binary_path,
@@ -222,16 +227,10 @@ def solve_captcha_if_present(driver):
                 break
     if not site_key or not captcha_type:
         return False
-    api_key = ""
-    try:
-        api_key = driver.execute_script("return window.streamlit_secrets.captcha.api_key")
-    except Exception:
-        try:
-            api_key = st.secrets["captcha"]["api_key"]
-        except Exception:
-            api_key = ""
+    # Load CAPTCHA API key from environment variables instead of st.secrets
+    api_key = os.environ.get("CAPTCHA_API_KEY", "")
     if not api_key:
-        print("2Captcha API key not found.")
+        print("2Captcha API key not found in environment variables.")
         return False
     data = {
         "key": api_key,
