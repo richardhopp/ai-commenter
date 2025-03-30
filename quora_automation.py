@@ -8,10 +8,12 @@ from automation_utils import init_driver, solve_captcha_if_present
 
 def find_answer_field(driver, timeout=15):
     """
-    Try to find the answer input field using multiple candidate selectors.
-    Returns the element if found; otherwise, raises an exception.
+    Try multiple selectors to find the answer input field.
+    Additional selectors target elements with role="textbox" which are often used for rich text editors.
     """
     selectors = [
+        (By.CSS_SELECTOR, "div[contenteditable='true'][role='textbox']"),
+        (By.CSS_SELECTOR, "div[role='textbox']"),
         (By.CSS_SELECTOR, "div[contenteditable='true']"),
         (By.TAG_NAME, "textarea"),
         (By.XPATH, "//*[contains(@placeholder, 'Write your answer')]")
@@ -21,9 +23,8 @@ def find_answer_field(driver, timeout=15):
             element = WebDriverWait(driver, timeout).until(
                 EC.element_to_be_clickable((by, selector))
             )
-            # Scroll element into view and click to ensure focus.
             driver.execute_script("arguments[0].scrollIntoView(true);", element)
-            element.click()
+            element.click()  # Ensure focus
             return element
         except Exception as e:
             print("Answer field not found with selector", selector, ":", e)
@@ -76,7 +77,7 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
                 print("No clickable Answer button found; proceeding assuming editor is already open.")
             time.sleep(3)
             
-            # Use helper function to locate the answer input field
+            # Use the helper function to locate the answer field
             try:
                 answer_box = find_answer_field(driver, timeout=15)
             except Exception as e:
