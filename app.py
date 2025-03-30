@@ -76,15 +76,21 @@ try:
         choose_money_site,
         generate_ai_response,
         solve_captcha_if_present,
-        get_next_tor_identity,
         test_proxy_connection
     )
+    # Add optional import for Tor if available
+    try:
+        from automation_utils import get_next_tor_identity
+    except ImportError:
+        def get_next_tor_identity():
+            logger.warning("Tor functionality not available")
+            pass
 except ImportError as e:
     logger.error(f"Failed to import required modules: {e}")
-    sys.exit(1)
+    st.error(f"Failed to import required modules: {e}")
 
 # --- Configure OpenAI API Key from Environment Variables or Streamlit Secrets ---
-if "openai" in st.secrets:
+if hasattr(st, 'secrets') and "openai" in st.secrets:
     openai.api_key = st.secrets["openai"]["api_key"]
 else:
     openai.api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -123,8 +129,8 @@ with tab1:
                                 help="Headless mode runs invisibly, while Headful shows the browser for debugging")
         os.environ["CHROME_HEADLESS"] = "true" if display_mode == "Headless" else "false"
         
-        use_tor = st.checkbox("Use Tor for IP rotation", value=True, 
-                              help="Rotate your IP address between requests using Tor network")
+        use_tor = st.checkbox("Use Tor for IP rotation", value=False, 
+                             help="Rotate your IP address between requests using Tor network")
         
         if use_tor:
             # Test Tor connection if enabled
@@ -138,7 +144,7 @@ with tab1:
     
     with col2:
         proxy = st.text_input("Custom Proxy (optional)", 
-                              help="e.g., http://user:pass@host:port (overrides Tor if both are enabled)")
+                             help="e.g., http://user:pass@host:port (overrides Tor if both are enabled)")
         
         captcha_api_key = st.text_input("2Captcha API Key", 
                                       value=os.environ.get("CAPTCHA_API_KEY", ""), 
@@ -182,6 +188,48 @@ with tab1:
             for i in range(int(num_accounts)):
                 cols = st.columns(2)
                 with cols[0]:
+                    username = st.text_input(f"{platform.capitalize()} Username {i+1}", 
+                                           key=f"{platform}_user_{i}",
+                                           type="default")
+                with cols[1]:
+                    password = st.text_input(f"{platform.capitalize()} Password {i+1}", 
+                                           key=f"{platform}_pass_{i}",
+                                           type="password")
+                
+                if username and password:
+                    accounts.append({
+                        "username": username,
+                        "password": password
+                    })
+            
+            platform_credentials[platform] = accounts
+            
+            st.info(f"Added {len(accounts)} {platform.capitalize()} accounts.")
+
+with tab2:
+    st.header("Content Strategy")
+    
+    use_chatgpt = st.checkbox("Generate responses with ChatGPT", value=True)
+    
+    if use_chatgpt:
+        ai_model = st.selectbox(
+            "AI Model",
+            ["gpt-3.5-turbo", "gpt-4"],
+            index=0,
+            help="GPT-4 provides higher quality responses but costs more"
+        )
+        
+        st.subheader("Your Websites")
+        
+        # Allow user to add their websites
+        col1, col2 = st.columns(2)
+        with col1:
+            num_sites = st.number_input("Number of websites", min_value=1, max_value=10, value=3)
+        
+        websites = []
+        for i in range(int(num_sites)):
+            cols = st.columns(3)
+            with cols[0]:
                 site_name = st.text_input(f"Website {i+1} Name", value=f"Site {i+1}", key=f"site_name_{i}")
             with cols[1]:
                 site_url = st.text_input(f"Website {i+1} URL", value=f"https://example{i+1}.com", key=f"site_url_{i}")
@@ -585,50 +633,7 @@ if __name__ == '__main__':
     try:
         # Import the Streamlit CLI module and run the app with the specified port
         from streamlit.web import cli as stcli
-        sys.argv = ["streamlit", "run", "main.py", "--server.port", str(port)]
+        sys.argv = ["streamlit", "run", "app.py", "--server.port", str(port)]
         sys.exit(stcli.main())
     except Exception as e:
         logger.error(f"Error starting Streamlit: {e}")
-
-                    username = st.text_input(f"{platform.capitalize()} Username {i+1}", 
-                                           key=f"{platform}_user_{i}",
-                                           type="default")
-                with cols[1]:
-                    password = st.text_input(f"{platform.capitalize()} Password {i+1}", 
-                                           key=f"{platform}_pass_{i}",
-                                           type="password")
-                
-                if username and password:
-                    accounts.append({
-                        "username": username,
-                        "password": password
-                    })
-            
-            platform_credentials[platform] = accounts
-            
-            st.info(f"Added {len(accounts)} {platform.capitalize()} accounts.")
-
-with tab2:
-    st.header("Content Strategy")
-    
-    use_chatgpt = st.checkbox("Generate responses with ChatGPT", value=True)
-    
-    if use_chatgpt:
-        ai_model = st.selectbox(
-            "AI Model",
-            ["gpt-3.5-turbo", "gpt-4"],
-            index=0,
-            help="GPT-4 provides higher quality responses but costs more"
-        )
-        
-        st.subheader("Your Websites")
-        
-        # Allow user to add their websites
-        col1, col2 = st.columns(2)
-        with col1:
-            num_sites = st.number_input("Number of websites", min_value=1, max_value=10, value=3)
-        
-        websites = []
-        for i in range(int(num_sites)):
-            cols = st.columns(3)
-            with cols[0]:
