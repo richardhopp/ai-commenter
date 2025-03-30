@@ -1,13 +1,12 @@
 import undetected_chromedriver as uc
 import random
 import time
-import itertools
 import requests
 import openai
 from packaging.version import Version as LooseVersion
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
-import shutil  # For checking binary paths
+import shutil  # To locate binaries
 
 # List of User-Agent strings
 USER_AGENTS = [
@@ -21,7 +20,7 @@ def _rotate_user_agent():
 
 def init_driver(proxy_address=None):
     options = uc.ChromeOptions()
-    # Attempt to find a valid Chromium binary using shutil.which
+    # Attempt to find the Chromium binary using shutil.which
     possible_bins = ["chromium", "chromium-browser", "google-chrome"]
     binary_path = None
     for b in possible_bins:
@@ -35,7 +34,7 @@ def init_driver(proxy_address=None):
         options.binary_location = binary_path
     else:
         print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
-
+    
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -46,7 +45,24 @@ def init_driver(proxy_address=None):
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
     
-    driver = uc.Chrome(options=options)
+    # Explicitly set driver_executable_path using shutil.which for chromedriver
+    driver_path = None
+    for p in ["chromedriver", "chromium-driver"]:
+        found = shutil.which(p)
+        print(f"[init_driver] Checking {p}: {found}")
+        if found:
+            driver_path = found
+            break
+    if driver_path:
+        print(f"[init_driver] Found chromedriver at: {driver_path}")
+    else:
+        print("[init_driver] WARNING: No chromedriver found via which().")
+    
+    # Initialize undetected-chromedriver with explicit paths and use_subprocess=False
+    driver = uc.Chrome(options=options,
+                       browser_executable_path=binary_path,
+                       driver_executable_path=driver_path,
+                       use_subprocess=False)
     driver.set_page_load_timeout(30)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
@@ -74,11 +90,9 @@ def extract_thread_content(url):
     html = driver.page_source
     driver.quit()
     soup = BeautifulSoup(html, "html.parser")
-    # Try Quora-style container first
     question_element = soup.find("div", {"class": "question_text"})
     if question_element:
         return question_element.get_text(strip=True)
-    # Otherwise, combine all paragraphs
     paragraphs = soup.find_all("p")
     if paragraphs:
         return " ".join(p.get_text(strip=True) for p in paragraphs)
@@ -87,26 +101,25 @@ def extract_thread_content(url):
 def choose_money_site(question_text):
     word_count = len(question_text.split())
     complexity = "simple" if word_count < 20 else "detailed"
-    # Expanded list of money sites
     sites = {
         "Living Abroad - Aparthotels": {
             "url": "https://aparthotel.com",
-            "description": "Offers a range of aparthotels, rental options, and travel guides for local living.",
+            "description": "Offers aparthotels and rental options with in-depth local living guides.",
             "count": random.randint(0, 5)
         },
         "Crypto Rentals": {
             "url": "https://cryptoapartments.com",
-            "description": "A modern rental platform accepting cryptocurrency with categorized listings and lifestyle insights.",
+            "description": "Modern rental platform accepting cryptocurrency with travel and lifestyle insights.",
             "count": random.randint(0, 5)
         },
         "Serviced Apartments": {
             "url": "https://servicedapartments.net",
-            "description": "Curated serviced apartments with travel tips and local renting rules.",
+            "description": "Specializes in serviced apartments with travel tips and local renting rules.",
             "count": random.randint(0, 5)
         },
         "Furnished Apartments": {
             "url": "https://furnishedapartments.net",
-            "description": "Focuses on furnished apartments, offering immediate living solutions and local living analyses.",
+            "description": "Focuses on furnished apartments with immediate living solutions and local analysis.",
             "count": random.randint(0, 5)
         },
         "Real Estate Abroad": {
@@ -116,7 +129,7 @@ def choose_money_site(question_text):
         },
         "Property Developments": {
             "url": "https://propertydevelopments.com",
-            "description": "New property projects with detailed guides on buying and financing.",
+            "description": "Latest new property projects with detailed buying and financing guides.",
             "count": random.randint(0, 5)
         },
         "Property Investment": {
@@ -126,7 +139,7 @@ def choose_money_site(question_text):
         },
         "Golden Visa Opportunities": {
             "url": "https://golden-visa.com",
-            "description": "Focuses on Golden Visa properties and investment immigration for securing global wealth.",
+            "description": "Focuses on Golden Visa properties and investment immigration for global elite.",
             "count": random.randint(0, 5)
         },
         "Residence by Investment": {
