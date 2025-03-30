@@ -47,6 +47,9 @@ def init_driver(proxy_address=None):
             binary_path = found
             break
     if binary_path:
+        # Ensure binary_path is a non-empty string
+        if not isinstance(binary_path, str) or not binary_path:
+            raise ValueError("Binary Location Must be a String")
         print(f"[init_driver] Found browser binary at: {binary_path}")
         options.binary_location = binary_path
     else:
@@ -76,8 +79,8 @@ def init_driver(proxy_address=None):
         print("[init_driver] WARNING: No chromedriver found via which().")
     
     driver = uc.Chrome(options=options,
-                       browser_executable_path=binary_path,
-                       driver_executable_path=driver_path,
+                       browser_executable_path=str(binary_path) if binary_path else None,
+                       driver_executable_path=str(driver_path) if driver_path else None,
                        use_subprocess=False)
     driver.set_page_load_timeout(30)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
