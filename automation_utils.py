@@ -52,6 +52,75 @@ def close_driver(driver):
         logging.error(f'[close_driver] Error closing driver: {e}')
         logging.exception(e)
 
+def solve_captcha_if_present(driver, max_attempts=3):
+    """
+    Check if a CAPTCHA is present on the page and attempt to solve it if found.
+    
+    Args:
+        driver: The WebDriver instance.
+        max_attempts: Maximum number of attempts to solve the CAPTCHA.
+        
+    Returns:
+        bool: True if CAPTCHA was solved or not present, False otherwise.
+    """
+    logging.info('[solve_captcha] Checking for CAPTCHA presence...')
+    
+    # Check for common CAPTCHA indicators
+    captcha_indicators = [
+        "//iframe[contains(@src, 'recaptcha')]",
+        "//iframe[contains(@src, 'captcha')]",
+        "//div[contains(@class, 'captcha')]",
+        "//div[contains(@class, 'g-recaptcha')]",
+        "//div[contains(text(), 'captcha')]",
+        "//div[contains(text(), 'CAPTCHA')]",
+        "//div[contains(text(), 'robot')]",
+        "//div[contains(text(), 'human')]"
+    ]
+    
+    captcha_present = False
+    for indicator in captcha_indicators:
+        try:
+            if driver.find_elements(By.XPATH, indicator):
+                captcha_present = True
+                logging.info(f'[solve_captcha] CAPTCHA detected via: {indicator}')
+                break
+        except Exception as e:
+            logging.warning(f'[solve_captcha] Error checking indicator {indicator}: {str(e)}')
+    
+    if not captcha_present:
+        logging.info('[solve_captcha] No CAPTCHA detected.')
+        return True
+    
+    # If CAPTCHA is present, we need to wait for the user to solve it manually
+    # or implement an automated solution (which is challenging and may violate ToS)
+    logging.warning('[solve_captcha] CAPTCHA detected but automated solving is not implemented.')
+    
+    # For demonstration, we'll just wait a bit to see if CAPTCHA disappears on its own
+    # (which would not work in practice)
+    attempts = 0
+    while attempts < max_attempts:
+        logging.info(f'[solve_captcha] Waiting for CAPTCHA to be solved (attempt {attempts+1}/{max_attempts})...')
+        time.sleep(10)  # Wait 10 seconds
+        
+        # Check if any of the CAPTCHA indicators are still present
+        still_present = False
+        for indicator in captcha_indicators:
+            try:
+                if driver.find_elements(By.XPATH, indicator):
+                    still_present = True
+                    break
+            except Exception:
+                pass
+        
+        if not still_present:
+            logging.info('[solve_captcha] CAPTCHA appears to be solved or disappeared.')
+            return True
+        
+        attempts += 1
+    
+    logging.error('[solve_captcha] Failed to solve CAPTCHA after maximum attempts.')
+    return False
+
 def choose_money_site(question_text):
     word_count = len(question_text.split())
     complexity = "simple" if word_count < 20 else "detailed"
