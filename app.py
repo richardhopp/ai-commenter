@@ -267,3 +267,15 @@ if st.session_state.log_records:
     st.table(st.session_state.log_records)
 else:
     st.write("No log records yet.")
+
+# --- Run Streamlit with the proper port ---
+if __name__ == '__main__':
+    # Get the port from the environment variable, default to 8501 if not set
+    port = os.environ.get("PORT", 8501)
+    try:
+        # Import the Streamlit CLI module and run the app with the specified port
+        from streamlit.web import cli as stcli
+        sys.argv = ["streamlit", "run", "app.py", "--server.port", str(port)]
+        sys.exit(stcli.main())
+    except Exception as e:
+        print("Error starting Streamlit:", e)
