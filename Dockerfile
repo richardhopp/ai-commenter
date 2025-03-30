@@ -41,20 +41,28 @@ RUN apt-get update && apt-get install -y \
 # Add Google Chrome repository and install google-chrome-stable
 RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y google-chrome-stable
+    && apt-get update && apt-get install -y google-chrome-stable \
+    && google-chrome --version  # Verify Chrome installation
 
 # Install Chrome driver - get the version matching your Chrome
 RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) \
+    && echo "Chrome version: $CHROME_VERSION" \
     && CHROMEDRIVER_VERSION=$(wget -qO- "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") \
+    && echo "Chromedriver version: $CHROMEDRIVER_VERSION" \
     && wget -q "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" \
     && unzip chromedriver_linux64.zip \
     && mv chromedriver /usr/local/bin/chromedriver \
     && chmod +x /usr/local/bin/chromedriver \
-    && rm chromedriver_linux64.zip
+    && rm chromedriver_linux64.zip \
+    && chromedriver --version  # Verify Chromedriver installation
 
-# Set environment variable for display and headless mode (set to false for visible browser)
+# Create a symbolic link to ensure Chrome can be found in the standard location
+RUN ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome \
+    && ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome
+
+# Set environment variable for display and headless mode (set to true for headless mode)
 ENV DISPLAY=:99
-ENV CHROME_HEADLESS=false
+ENV CHROME_HEADLESS=true
 
 # Set working directory
 WORKDIR /app
@@ -79,11 +87,17 @@ autorestart=true\n\n\
 command=x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb\n\
 autorestart=true\n\n\
 [program:streamlit]\n\
-command=streamlit run app.py --server.port=8501 --server.address=0.0.0.0\n\
+command=streamlit run main.py --server.port=10000 --server.address=0.0.0.0\n\
 autorestart=true\n" > /etc/supervisor/conf.d/supervisord.conf
 
-# Expose ports: 8501 for Streamlit UI, 5900 for VNC
-EXPOSE 8501 5900 10000
+# Expose ports: 10000 for Streamlit UI, 5900 for VNC
+EXPOSE 10000 5900 8501
 
-# Make sure port 10000 is used for the CMD in render.com
+# Print verification information at the end of the build
+RUN echo "Chrome path: $(which google-chrome-stable)" \
+    && echo "Chrome version: $(google-chrome --version)" \
+    && echo "Chromedriver path: $(which chromedriver)" \
+    && echo "Chromedriver version: $(chromedriver --version)"
+
+# Make sure port 10000 is used for Streamlit in render.com
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
