@@ -12,7 +12,7 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
         driver.set_page_load_timeout(30)
         driver.get("https://www.quora.com/login")
         
-        # Wait for login fields and submit credentials
+        # Log in
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.NAME, "email")))
         email_field = driver.find_element(By.NAME, "email")
         pwd_field = driver.find_element(By.NAME, "password")
@@ -21,7 +21,6 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
         pwd_field.send_keys(Keys.ENTER)
         time.sleep(5)
         
-        # If still on login page, try to solve CAPTCHA if present
         if "login" in driver.current_url.lower():
             if solve_captcha_if_present(driver):
                 pwd_field = driver.find_element(By.NAME, "password")
@@ -29,47 +28,66 @@ def quora_login_and_post(username, password, content, question_url=None, proxy=N
                 time.sleep(5)
         
         if question_url:
-            # Navigate to the target question page
             driver.get(question_url)
             WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             time.sleep(3)
             
-            # Try clicking the "Answer" button
-            try:
-                answer_btn = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'Answer')]"))
-                )
-                answer_btn.click()
-            except Exception as e:
-                print("Answer button not found; proceeding without clicking it:", e)
+            # Try clicking the "Answer" button using multiple selectors
+            answer_clicked = False
+            answer_selectors = [
+                (By.XPATH, "//*[contains(text(),'Answer')]"),
+                (By.XPATH, "//button[contains(.,'Answer')]")
+            ]
+            for sel in answer_selectors:
+                try:
+                    answer_btn = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable(sel)
+                    )
+                    driver.execute_script("arguments[0].scrollIntoView(true);", answer_btn)
+                    answer_btn.click()
+                    answer_clicked = True
+                    break
+                except Exception as e:
+                    print("Answer button not found with selector", sel, ":", e)
+            if not answer_clicked:
+                print("No clickable Answer button found; proceeding assuming editor is already open.")
             time.sleep(3)
             
-            # Try to locate the answer field using multiple selectors
-            try:
-                # First, try a contenteditable element
-                answer_box = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "div[contenteditable='true']"))
-                )
-            except Exception as e:
-                print("Contenteditable answer box not found, trying textarea:", e)
-                answer_box = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.TAG_NAME, "textarea"))
-                )
-            answer_box.click()  # ensure focus
+            # Try finding the answer input field with a list of selectors
+            field_selectors = [
+                (By.CSS_SELECTOR, "div[contenteditable='true']"),
+                (By.TAG_NAME, "textarea"),
+                (By.XPATH, "//*[contains(@placeholder, 'Write your answer')]")
+            ]
+            answer_box = None
+            for by, selector in field_selectors:
+                try:
+                    answer_box = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((by, selector))
+                    )
+                    driver.execute_script("arguments[0].scrollIntoView(true);", answer_box)
+                    answer_box.click()
+                    break
+                except Exception as e:
+                    print("Answer field not found with selector", selector, ":", e)
+            if not answer_box:
+                raise Exception("Unable to locate an answer input field.")
+            
             answer_box.send_keys(content)
             
-            # Try to click the Submit button
+            # Attempt to click the submit button
             try:
                 submit_btn = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Submit') or contains(text(),'Answer')]"))
                 )
+                driver.execute_script("arguments[0].scrollIntoView(true);", submit_btn)
                 submit_btn.click()
             except Exception as e:
-                print("Submit button not found or not clickable; using keyboard shortcut:", e)
+                print("Submit button not found or not clickable; using CTRL+ENTER shortcut:", e)
                 answer_box.send_keys(Keys.CONTROL + Keys.ENTER)
             time.sleep(5)
         else:
-            # New Question flow (if needed; for posting a question rather than an answer)
+            # New Question flow (if needed)
             driver.get("https://www.quora.com/")
             time.sleep(3)
             try:
