@@ -33,7 +33,7 @@ def find_answer_field(driver, timeout=15):
     raise Exception("Unable to locate an answer input field using any known selector.")
 
 def quora_login_and_post(username=None, password=None, content="", question_url=None, proxy=None):
-    # If credentials are not passed in, load them from environment variables
+    # If credentials are not passed in, load them from environment variables.
     if not username:
         username = os.environ.get("QUORA_USER1", "")
     if not password:
@@ -73,7 +73,7 @@ def quora_login_and_post(username=None, password=None, content="", question_url=
             WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             time.sleep(3)
             
-            # Try clicking the "Answer" button using multiple selectors
+            # Try clicking the "Answer" button using multiple selectors.
             answer_clicked = False
             answer_selectors = [
                 (By.XPATH, "//*[contains(text(),'Answer')]"),
@@ -95,7 +95,7 @@ def quora_login_and_post(username=None, password=None, content="", question_url=
                 print("No clickable Answer button found; proceeding assuming editor is already open.")
             time.sleep(3)
             
-            # Use the helper function to locate the answer field
+            # Locate the answer input field using the helper function.
             try:
                 answer_box = find_answer_field(driver, timeout=15)
             except Exception as e:
@@ -103,7 +103,7 @@ def quora_login_and_post(username=None, password=None, content="", question_url=
             
             answer_box.send_keys(content)
             
-            # Attempt to click the submit button
+            # Attempt to click the submit button.
             try:
                 submit_btn = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Submit') or contains(text(),'Answer')]"))
