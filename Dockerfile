@@ -78,7 +78,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PORT=10000
 
 # Create data directory for persistent storage
-RUN mkdir -p /app/data/debug_screenshots
+RUN mkdir -p /app/data/debug_screenshots /app/.streamlit
 
 # Set working directory
 WORKDIR /app
@@ -87,8 +87,15 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create patch for undetected-chromedriver
+COPY patch_undetected.py /app/patch_undetected.py
+RUN python -c "from patch_undetected import patch_undetected; patch_undetected()"
+
 # Copy the rest of your application code
 COPY . /app
+
+# Add alias for randomize_typing_speed function
+RUN echo '\n# Add alias for backward compatibility\n_randomize_typing_speed = randomize_typing_speed' >> /app/automation_utils.py
 
 # Create supervisor configuration to launch Xvfb, fluxbox, x11vnc, and your Streamlit app
 RUN mkdir -p /etc/supervisor/conf.d
@@ -103,14 +110,14 @@ autorestart=true\n\n\
 command=x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb\n\
 autorestart=true\n\n\
 [program:streamlit]\n\
-command=streamlit run main.py --server.port=${PORT} --server.address=0.0.0.0\n\
+command=streamlit run app.py --server.port=${PORT} --server.address=0.0.0.0\n\
 autorestart=true\n\
 stdout_logfile=/dev/stdout\n\
 stdout_logfile_maxbytes=0\n\
 stderr_logfile=/dev/stderr\n\
 stderr_logfile_maxbytes=0\n" > /etc/supervisor/conf.d/supervisord.conf
 
-# Expose ports: 10000 for Streamlit UI, 5900 for VNC
+# Expose ports: 10000 for Streamlit UI, 5900 for VNC, 8501 backup port
 EXPOSE 10000 5900 8501
 
 # Print verification information at the end of the build
