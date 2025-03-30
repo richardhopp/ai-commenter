@@ -13,6 +13,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import selenium components
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import (
+    TimeoutException, 
+    NoSuchElementException, 
+    ElementClickInterceptedException,
+    StaleElementReferenceException
+)
+
 # Import automation utilities
 from automation_utils import init_driver, solve_captcha_if_present, simulate_human_behavior, randomize_typing_speed
 from automation_utils import wait_for_element, wait_for_elements, safe_click, fill_text_field
@@ -38,20 +48,6 @@ QUESTION_SELECTORS = {
     "topic_input": (By.CSS_SELECTOR, "input[placeholder='Add topics']"),
     "first_topic_suggestion": (By.CSS_SELECTOR, ".qu-dynamicFontSize--small"),
 }
-
-# Check if required imports are available
-try:
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
-    from selenium.common.exceptions import (
-        TimeoutException, 
-        NoSuchElementException, 
-        ElementClickInterceptedException,
-        StaleElementReferenceException
-    )
-except ImportError as e:
-    logger.error(f"Failed to import required modules: {str(e)}")
-    raise
 
 def quora_login(driver, email: str, password: str) -> bool:
     """
