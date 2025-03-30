@@ -356,4 +356,48 @@ def quora_login_and_post(username=None, password=None, content="", question_url=
             
             # Try to find and click the submit button
             post_selectors = [
-                (By.XPATH, "//button[normalize-space()
+                (By.XPATH, "//button[normalize-space()='Add Question' or normalize-space()='Submit']"),
+                (By.XPATH, "//button[contains(text(), 'Add Question')]"),
+                (By.XPATH, "//button[contains(text(), 'Submit')]"),
+                (By.CSS_SELECTOR, "button.submit_button")
+            ]
+            
+            post_clicked = False
+            for selector_type, selector in post_selectors:
+                try:
+                    post_btn = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((selector_type, selector))
+                    )
+                    simulate_human_behavior(driver, post_btn)
+                    post_btn.click()
+                    post_clicked = True
+                    logger.info(f"[quora] Clicked post button using selector: {selector}")
+                    break
+                except Exception as e:
+                    logger.debug(f"[quora] Post button not found with selector {selector}: {e}")
+            
+            if not post_clicked:
+                logger.warning("[quora] Post button not found; using keyboard shortcut")
+                # Use keyboard shortcut as fallback
+                question_input.send_keys(Keys.CONTROL + Keys.ENTER)
+                logger.info("[quora] Used Ctrl+Enter to submit question")
+            
+            # Wait for submission to complete
+            time.sleep(random.uniform(4, 6))
+        
+        # Take a screenshot for verification purposes
+        try:
+            debug_dir = "debug_screenshots"
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            driver.save_screenshot(f"{debug_dir}/quora_{timestamp}.png")
+            logger.info(f"[quora] Saved verification screenshot to {debug_dir}/quora_{timestamp}.png")
+        except Exception as e:
+            logger.error(f"[quora] Failed to save verification screenshot: {e}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"[quora] Error during Quora automation: {e}")
+        return False
+    finally:
+        driver.quit()
