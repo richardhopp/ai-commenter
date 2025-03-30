@@ -1,42 +1,32 @@
-# app.py
-
-#############################################
-# Monkey-Patching Section
-#############################################
-
+import os
 import sys
 import importlib.util
 import re
-import streamlit as st
 import time
 import random
 import openai
-
+import streamlit as st
 from packaging.version import Version as PackagingVersion
 
+# --- Monkey-Patching Section ---
 class MyLooseVersion:
     """
     A custom version class to emulate distutils.version.LooseVersion.
-    This class attempts to parse the input version string using packaging.version.
-    If parsing fails (e.g. for "real estate tokyo"), it falls back to storing the raw string.
-    It exposes both .version (a list of tokens) and .vstring attributes.
+    Attempts to parse the version string using packaging.version.
+    Falls back to storing the raw string.
     """
     def __init__(self, version):
-        self.vstring = version  # store the raw string
+        self.vstring = version
         try:
             parsed = PackagingVersion(version)
             self.parsed = parsed
-            # Create a list of tokens from the parsed version string.
             self.version = str(parsed).split(".")
         except Exception:
             self.parsed = None
             self.version = [version]
 
     def __str__(self):
-        if self.parsed is not None:
-            return str(self.parsed)
-        else:
-            return self.vstring
+        return str(self.parsed) if self.parsed is not None else self.vstring
 
     def __repr__(self):
         return f"<MyLooseVersion {str(self)}>"
@@ -51,8 +41,7 @@ def patch_setuptools():
 def patch_undetected_in_memory():
     """
     In-memory patch: override undetected_chromedriver.patcher.LooseVersion
-    with our custom MyLooseVersion. This prevents errors when non-version
-    strings (like search keywords) are passed.
+    with our custom MyLooseVersion.
     """
     try:
         import undetected_chromedriver.patcher as patcher
@@ -64,10 +53,7 @@ def patch_undetected_in_memory():
 patch_setuptools()
 patch_undetected_in_memory()
 
-#############################################
-# Now Import the Rest
-#############################################
-
+# --- Now Import the Rest ---
 from quora_automation import quora_login_and_post
 from reddit_automation import reddit_login_and_post
 from tripadvisor_automation import tripadvisor_login_and_post
@@ -79,10 +65,12 @@ from automation_utils import (
     solve_captcha_if_present
 )
 
+# --- Configure OpenAI API Key from Environment Variables ---
+openai.api_key = os.environ.get("OPENAI_API_KEY", "")
+
 #############################################
 # Streamlit UI Setup
 #############################################
-
 st.set_page_config(page_title="Stealth Multi-Platform Poster", layout="centered")
 st.title("Stealth Multi-Platform Poster with Custom LooseVersion")
 st.markdown(
@@ -90,6 +78,12 @@ st.markdown(
     "Quora, Reddit, and TripAdvisor. You can choose Manual mode to post to one platform or Auto mode to search for "
     "threads across multiple sites. A log report of processed URLs and statuses is maintained below."
 )
+
+# Optionally, allow the user to choose whether to run Chrome in headless or headful mode.
+# (When running headful, you can view Chromium's actions via VNC if configured in Docker.)
+display_mode = st.radio("Browser Mode", options=["Headless", "Headful"], index=0)
+# Pass this setting to init_driver via an environment variable.
+os.environ["CHROME_HEADLESS"] = "true" if display_mode == "Headless" else "false"
 
 # Initialize session state log
 if "log_records" not in st.session_state:
@@ -99,14 +93,17 @@ if "log_records" not in st.session_state:
 # Account Credentials Loader
 #############################################
 def load_accounts(platform):
-    """Load account credentials from st.secrets for the given platform."""
+    """Load account credentials from environment variables (simulate st.secrets structure)."""
     accounts = []
-    if platform in st.secrets:
-        config = st.secrets[platform]
-        i = 1
-        while f"user{i}" in config and f"pass{i}" in config:
-            accounts.append((f"Account {i} - {config[f'user{i}']}", config[f"user{i}"], config[f"pass{i}"]))
-            i += 1
+    # Example: For Quora, we expect environment variables: QUORA_USER1, QUORA_PASS1, etc.
+    idx = 1
+    while True:
+        user = os.environ.get(f"{platform.upper()}_USER{idx}")
+        passwd = os.environ.get(f"{platform.upper()}_PASS{idx}")
+        if not user or not passwd:
+            break
+        accounts.append((f"Account {idx} - {user}", user, passwd))
+        idx += 1
     return accounts
 
 #############################################
@@ -120,7 +117,7 @@ mode_choice = st.selectbox("Select Mode", ["quora", "reddit", "tripadvisor", "au
 if mode_choice != "auto":
     accounts = load_accounts(mode_choice)
     if not accounts:
-        st.error(f"No accounts configured for {mode_choice}. Please add them via Streamlit Cloud Secrets.")
+        st.error(f"No accounts configured for {mode_choice}. Please add them as environment variables.")
         st.stop()
     selected_account = st.selectbox(f"Choose {mode_choice} Account", [a[0] for a in accounts])
     account = next(a for a in accounts if a[0] == selected_account)
@@ -141,7 +138,7 @@ if mode_choice != "auto":
 
     use_chatgpt = st.checkbox("Generate answer with ChatGPT", value=True)
     if use_chatgpt:
-        openai.api_key = st.secrets["openai"]["api_key"]
+        # OpenAI API key is already set above.
         prompt_for_analysis = st.text_area("Additional instructions (optional)", "Provide a concise, clear answer.", height=80)
 
     if st.button("Post Content Manually"):
@@ -181,12 +178,12 @@ else:
         default=["quora", "reddit", "tripadvisor"],
         help="Select all sites you want to search and post from."
     )
-    # For each chosen site, let the user choose an account
+    # For each chosen site, load the account from environment variables
     site_account_map = {}
     for site in auto_sites:
         accs = load_accounts(site)
         if not accs:
-            st.warning(f"No accounts found for {site}. Please add them in secrets.")
+            st.warning(f"No accounts found for {site}. Please set environment variables for {site.upper()}_USER1 and {site.upper()}_PASS1.")
         else:
             sel = st.selectbox(f"Choose {site} Account", [a[0] for a in accs], key=f"auto_{site}")
             site_account_map[site] = next(a for a in accs if a[0] == sel)
@@ -198,13 +195,13 @@ else:
 
     use_chatgpt = st.checkbox("Generate answer with ChatGPT", value=True)
     if use_chatgpt:
-        openai.api_key = st.secrets["openai"]["api_key"]
         prompt_for_analysis = st.text_area("Additional instructions (optional)", "Provide a concise, clear answer.", height=80)
 
     if st.button("Run Auto Process"):
         st.info("Starting auto process: Searching for threads and generating responses...")
+        domain_map = {"quora": "quora.com", "reddit": "reddit.com", "tripadvisor": "tripadvisor.com"}
         for site in auto_sites:
-            domain_map = {"quora": "quora.com", "reddit": "reddit.com", "tripadvisor": "tripadvisor.com"}
+            site = site.strip().lower()
             if site not in domain_map:
                 st.error(f"Unknown site: {site}. Skipping.")
                 continue
@@ -212,7 +209,6 @@ else:
             query = f'site:{domain} "{root_keyword}"'
             st.write(f"Searching for threads on {site} with query: {query}")
 
-            # Get account for the site
             if site in site_account_map:
                 acc = site_account_map[site]
                 username, password = acc[1], acc[2]
@@ -245,7 +241,9 @@ else:
                             res = quora_login_and_post(username, password, final_answer, question_url=url, proxy=proxy)
                             posted_platform = "auto/quora"
                         elif site == "reddit":
-                            res = reddit_login_and_post(username, password, final_answer, subreddit="test", post_title="Auto Post", proxy=proxy)
+                            subreddit = os.environ.get("REDDIT_SUBREDDIT", "test")
+                            post_title = os.environ.get("REDDIT_POST_TITLE", "Auto Post")
+                            res = reddit_login_and_post(username, password, final_answer, subreddit, post_title, proxy=proxy)
                             posted_platform = "auto/reddit"
                         else:
                             res = tripadvisor_login_and_post(username, password, final_answer, thread_url=url, proxy=proxy)
