@@ -41,7 +41,7 @@ autorestart=true\n\n\
 command=x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb\n\
 autorestart=true\n\n\
 [program:streamlit]\n\
-command=streamlit run app.py --server.port=8501 --server.address=0.0.0.0\n\
+command=/bin/sh -c \"streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0.0.0\"\n\
 autorestart=true\n" > /etc/supervisor/conf.d/supervisord.conf
 
 # Expose the Streamlit port and the VNC port
