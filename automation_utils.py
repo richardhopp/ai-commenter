@@ -4,7 +4,7 @@ import time
 import itertools
 import requests
 import openai
-from packaging.version import Version as LooseVersion
+from packaging.version import Version as LooseVersion  # Used only if needed elsewhere
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 
@@ -20,6 +20,13 @@ def _rotate_user_agent():
 
 def init_driver(proxy_address=None):
     options = uc.ChromeOptions()
+    # Set binary location explicitly for Streamlit Cloud
+    import os
+    binary_locations = ["/usr/bin/chromium", "/usr/bin/chromium-browser"]
+    for loc in binary_locations:
+        if os.path.isfile(loc):
+            options.binary_location = loc
+            break
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -53,70 +60,76 @@ def search_google(query, max_results=5):
 def extract_thread_content(url):
     driver = init_driver()
     driver.get(url)
-    time.sleep(random.uniform(3,6))
+    time.sleep(random.uniform(3, 6))
     html = driver.page_source
     driver.quit()
     soup = BeautifulSoup(html, "html.parser")
+    # Try to find a container with class "question_text" (Quora-style)
     question_element = soup.find("div", {"class": "question_text"})
     if question_element:
         return question_element.get_text(strip=True)
+    # Otherwise, combine all paragraph text
     paragraphs = soup.find_all("p")
     if paragraphs:
         return " ".join(p.get_text(strip=True) for p in paragraphs)
     return ""
 
 def choose_money_site(question_text):
+    """
+    Based on the question text, decide which money site to plug.
+    This function uses a creative, expanded list of money sites.
+    """
     word_count = len(question_text.split())
     complexity = "simple" if word_count < 20 else "detailed"
     sites = {
         "Living Abroad - Aparthotels": {
             "url": "https://aparthotel.com",
-            "description": "Discover global aparthotels and rental options with in-depth local living guides.",
+            "description": "Offers a range of aparthotels, rental options, and travel guides for local living.",
             "count": random.randint(0, 5)
         },
         "Crypto Rentals": {
             "url": "https://cryptoapartments.com",
-            "description": "Modern rental platform accepting cryptocurrency with travel and lifestyle insights.",
+            "description": "A modern rental platform that accepts cryptocurrency, featuring lifestyle insights.",
             "count": random.randint(0, 5)
         },
         "Serviced Apartments": {
             "url": "https://servicedapartments.net",
-            "description": "Curated listings of serviced apartments featuring travel tips and local renting rules.",
+            "description": "Specializes in serviced apartments with detailed travel tips and local renting rules.",
             "count": random.randint(0, 5)
         },
         "Furnished Apartments": {
             "url": "https://furnishedapartments.net",
-            "description": "Immediate living solutions with organized listings and analyses of local living conditions.",
+            "description": "Focuses on furnished apartments with immediate living solutions and local living analysis.",
             "count": random.randint(0, 5)
         },
         "Real Estate Abroad": {
             "url": "https://realestateabroad.com",
-            "description": "International property developments and investment insights with market analysis.",
+            "description": "International property investments, buying guides, financing tips, and market analysis.",
             "count": random.randint(0, 5)
         },
         "Property Developments": {
             "url": "https://propertydevelopments.com",
-            "description": "Latest new property projects with detailed buying guides and financing options.",
+            "description": "Focuses on new property projects with detailed buying and financing guides.",
             "count": random.randint(0, 5)
         },
         "Property Investment": {
             "url": "https://propertyinvestment.net",
-            "description": "Dedicated to property investment—offering how-to articles, financing guides, and yield analysis.",
+            "description": "Dedicated to property investment with how-to articles, financing guides, and yield analysis.",
             "count": random.randint(0, 5)
         },
         "Golden Visa Opportunities": {
             "url": "https://golden-visa.com",
-            "description": "Exclusive insights on Golden Visa properties and investment immigration for the global elite.",
+            "description": "Focuses on Golden Visa properties, investment immigration, and securing wealth globally.",
             "count": random.randint(0, 5)
         },
         "Residence by Investment": {
             "url": "https://residence-by-investment.com",
-            "description": "Guidance on securing residency through property investments, featuring country-specific strategies.",
+            "description": "Guides investors on obtaining residency through property investments across multiple markets.",
             "count": random.randint(0, 5)
         },
         "Citizenship by Investment": {
             "url": "https://citizenship-by-investment.net",
-            "description": "Comprehensive information on citizenship-by-investment programs and securing your wealth globally.",
+            "description": "Covers citizenship-by-investment programs, offering global insights and investment tips.",
             "count": random.randint(0, 5)
         }
     }
@@ -152,7 +165,6 @@ def solve_captcha_if_present(driver):
     Checks for a CAPTCHA on the page and uses 2Captcha to solve it if found.
     Returns True if a CAPTCHA was solved, else False.
     """
-    # Look for a data-sitekey in the page source
     page_html = driver.page_source
     captcha_type = None
     site_key = None
@@ -162,7 +174,6 @@ def solve_captcha_if_present(driver):
         site_key = page_html[start:end]
         captcha_type = "recaptcha"
     if not site_key:
-        # Try checking for an iframe with a src containing "sitekey=" or "k="
         iframes = driver.find_elements(By.TAG_NAME, "iframe")
         for iframe in iframes:
             src = iframe.get_attribute("src")
@@ -178,7 +189,6 @@ def solve_captcha_if_present(driver):
     try:
         api_key = driver.execute_script("return window.streamlit_secrets.captcha.api_key")
     except Exception:
-        # Fallback to st.secrets (if accessible) or environment variable
         try:
             api_key = st.secrets["captcha"]["api_key"]
         except Exception:
@@ -186,8 +196,6 @@ def solve_captcha_if_present(driver):
     if not api_key:
         print("2Captcha API key not found.")
         return False
-
-    # Submit CAPTCHA solving request to 2Captcha
     data = {
         "key": api_key,
         "method": "userrecaptcha",
@@ -200,11 +208,9 @@ def solve_captcha_if_present(driver):
     except Exception as e:
         print("Error sending CAPTCHA request:", e)
         return False
-
     if resp.get("status") != 1:
         print("Error from 2Captcha:", resp.get("request"))
         return False
-
     captcha_id = resp.get("request")
     token = None
     for _ in range(20):
@@ -220,11 +226,8 @@ def solve_captcha_if_present(driver):
         elif r.get("request") != "CAPCHA_NOT_READY":
             print("2Captcha error:", r.get("request"))
             break
-
     if not token:
         return False
-
-    # Inject the token into the CAPTCHA response field (for reCAPTCHA)
     driver.execute_script("""
         document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => {
             el.style.display = 'block';
