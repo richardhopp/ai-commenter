@@ -6,7 +6,8 @@ import openai
 from packaging.version import Version as LooseVersion
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
-import shutil  # To locate binaries
+import shutil
+import os
 
 # List of User-Agent strings
 USER_AGENTS = [
@@ -20,7 +21,8 @@ def _rotate_user_agent():
 
 def init_driver(proxy_address=None):
     options = uc.ChromeOptions()
-    # Attempt to find the Chromium binary using shutil.which
+    
+    # Attempt to find a valid Chromium binary using shutil.which
     possible_bins = ["chromium", "chromium-browser", "google-chrome"]
     binary_path = None
     for b in possible_bins:
@@ -35,6 +37,26 @@ def init_driver(proxy_address=None):
     else:
         print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
     
+    # Attempt to find chromedriver
+    possible_drivers = ["chromedriver", "chromium-driver"]
+    driver_path = None
+    for p in possible_drivers:
+        found = shutil.which(p)
+        print(f"[init_driver] Checking {p}: {found}")
+        if found:
+            driver_path = found
+            # Attempt to set execute permissions (if possible)
+            try:
+                os.chmod(driver_path, 0o755)
+                print(f"[init_driver] Set execute permissions on {driver_path}")
+            except Exception as e:
+                print(f"[init_driver] Warning: Failed to set permissions on {driver_path}: {e}")
+            break
+    if driver_path:
+        print(f"[init_driver] Found chromedriver at: {driver_path}")
+    else:
+        print("[init_driver] WARNING: No chromedriver found via which().")
+    
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -42,21 +64,9 @@ def init_driver(proxy_address=None):
     ua = _rotate_user_agent()
     options.add_argument(f"--user-agent={ua}")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
-    
-    # Explicitly set driver_executable_path using shutil.which for chromedriver
-    driver_path = None
-    for p in ["chromedriver", "chromium-driver"]:
-        found = shutil.which(p)
-        print(f"[init_driver] Checking {p}: {found}")
-        if found:
-            driver_path = found
-            break
-    if driver_path:
-        print(f"[init_driver] Found chromedriver at: {driver_path}")
-    else:
-        print("[init_driver] WARNING: No chromedriver found via which().")
     
     # Initialize undetected-chromedriver with explicit paths and use_subprocess=False
     driver = uc.Chrome(options=options,
@@ -104,7 +114,7 @@ def choose_money_site(question_text):
     sites = {
         "Living Abroad - Aparthotels": {
             "url": "https://aparthotel.com",
-            "description": "Offers aparthotels and rental options with in-depth local living guides.",
+            "description": "Offers aparthotels, rental options, and travel guides for local living.",
             "count": random.randint(0, 5)
         },
         "Crypto Rentals": {
@@ -139,7 +149,7 @@ def choose_money_site(question_text):
         },
         "Golden Visa Opportunities": {
             "url": "https://golden-visa.com",
-            "description": "Focuses on Golden Visa properties and investment immigration for global elite.",
+            "description": "Focuses on Golden Visa properties and investment immigration for the global elite.",
             "count": random.randint(0, 5)
         },
         "Residence by Investment": {
@@ -183,7 +193,7 @@ def generate_ai_response(question_text, additional_prompt, use_chatgpt=True):
 def solve_captcha_if_present(driver):
     """
     Checks for a CAPTCHA on the page and uses 2Captcha to solve it if found.
-    Returns True if a CAPTCHA was solved, else False.
+    Returns True if solved, otherwise False.
     """
     page_html = driver.page_source
     captcha_type = None
