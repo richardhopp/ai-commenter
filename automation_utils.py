@@ -22,8 +22,7 @@ def _rotate_user_agent():
 
 def init_driver(proxy_address=None):
     options = uc.ChromeOptions()
-    
-    # Find a valid Chromium binary using shutil.which
+    # Attempt to find the Chromium binary using shutil.which
     possible_bins = ["chromium", "chromium-browser", "google-chrome"]
     binary_path = None
     for b in possible_bins:
@@ -38,7 +37,7 @@ def init_driver(proxy_address=None):
     else:
         print("[init_driver] WARNING: No chromium binary found via which(). Not setting binary_location.")
     
-    # Attempt to find chromedriver and copy it to a temporary location to fix permission issues
+    # Find chromedriver and copy to temp location to fix permissions
     possible_drivers = ["chromedriver", "chromium-driver"]
     driver_path = None
     for p in possible_drivers:
@@ -49,7 +48,6 @@ def init_driver(proxy_address=None):
             break
     if driver_path:
         print(f"[init_driver] Found chromedriver at: {driver_path}")
-        # Copy chromedriver to a temporary location and set execute permissions
         try:
             tmp_dir = tempfile.gettempdir()
             tmp_driver = os.path.join(tmp_dir, "chromedriver")
@@ -72,7 +70,6 @@ def init_driver(proxy_address=None):
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
     
-    # Initialize undetected-chromedriver with explicit paths and disable subprocess mode for stability
     driver = uc.Chrome(options=options,
                        browser_executable_path=binary_path,
                        driver_executable_path=driver_path,
@@ -171,26 +168,32 @@ def choose_money_site(question_text):
     return selected_site[0], selected_site[1], complexity
 
 def generate_ai_response(question_text, additional_prompt, use_chatgpt=True):
+    """
+    Uses OpenAI's ChatCompletion API (gpt-3.5-turbo) to generate an answer.
+    """
     if not use_chatgpt:
         return "Default answer: " + question_text[:100] + "..."
     site_name, site_details, complexity = choose_money_site(question_text)
     plug = f"Click here for more details: {site_details['url']}. {site_details['description']}."
-    prompt = (
+    prompt_text = (
         f"Analyze the following question and provide a clear, concise answer. "
         f"Include a subtle reference to our service: {plug}\n\n"
-        f"Question: {question_text}\nAdditional instructions: {additional_prompt}\n\nAnswer:"
+        f"Question: {question_text}\nAdditional instructions: {additional_prompt}"
     )
     try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt_text}
+            ],
             max_tokens=250 if complexity == "detailed" else 100,
             temperature=0.7,
             top_p=1,
             frequency_penalty=0,
             presence_penalty=0
         )
-        return response.choices[0].text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Error generating answer: {e}"
 
