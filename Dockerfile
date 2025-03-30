@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chrome
@@ -56,5 +57,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Your original CMD - keep this intact
+# Your original CMD
 CMD ["streamlit", "run", "main.py", "--server.port", "10000"]
