@@ -758,7 +758,7 @@ def render_platform_posting():
         col1, col2 = st.columns(2)
         
         with col1:
-post_button = st.button("Post Content")
+            post_button = st.button("Post Content")
         
         with col2:
             headless_mode = st.checkbox("Run in headless mode", value=True)
