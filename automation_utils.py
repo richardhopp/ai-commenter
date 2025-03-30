@@ -4,9 +4,10 @@ import time
 import itertools
 import requests
 import openai
-from packaging.version import Version as LooseVersion  # Used only if needed elsewhere
+from packaging.version import Version as LooseVersion
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
+import shutil  # For which()
 
 # List of User-Agent strings
 USER_AGENTS = [
@@ -19,14 +20,25 @@ def _rotate_user_agent():
     return random.choice(USER_AGENTS)
 
 def init_driver(proxy_address=None):
+    """
+    Initialize undetected-chromedriver with stealth settings, trying to locate
+    the chromium binary via shutil.which on Streamlit Cloud.
+    """
     options = uc.ChromeOptions()
-    # Set binary location explicitly for Streamlit Cloud
-    import os
-    binary_locations = ["/usr/bin/chromium", "/usr/bin/chromium-browser"]
-    for loc in binary_locations:
-        if os.path.isfile(loc):
-            options.binary_location = loc
+    # Attempt to find a chromium-like binary
+    possible_bins = ["chromium", "chromium-browser", "google-chrome"]
+    binary_path = None
+    for b in possible_bins:
+        found = shutil.which(b)
+        if found:
+            binary_path = found
             break
+    if binary_path:
+        print(f"[init_driver] Found chromium binary at: {binary_path}")
+        options.binary_location = binary_path
+    else:
+        print("[init_driver] WARNING: No chromium binary found via which(). The driver may fail.")
+
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -34,13 +46,16 @@ def init_driver(proxy_address=None):
     ua = _rotate_user_agent()
     options.add_argument(f"--user-agent={ua}")
     options.add_argument("--disable-blink-features=AutomationControlled")
+
     if proxy_address:
         options.add_argument(f"--proxy-server={proxy_address}")
+
     driver = uc.Chrome(options=options)
     driver.set_page_load_timeout(30)
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-    })
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
+    )
     return driver
 
 def search_google(query, max_results=5):
@@ -60,15 +75,13 @@ def search_google(query, max_results=5):
 def extract_thread_content(url):
     driver = init_driver()
     driver.get(url)
-    time.sleep(random.uniform(3, 6))
+    time.sleep(random.uniform(3,6))
     html = driver.page_source
     driver.quit()
     soup = BeautifulSoup(html, "html.parser")
-    # Try to find a container with class "question_text" (Quora-style)
     question_element = soup.find("div", {"class": "question_text"})
     if question_element:
         return question_element.get_text(strip=True)
-    # Otherwise, combine all paragraph text
     paragraphs = soup.find_all("p")
     if paragraphs:
         return " ".join(p.get_text(strip=True) for p in paragraphs)
@@ -76,8 +89,7 @@ def extract_thread_content(url):
 
 def choose_money_site(question_text):
     """
-    Based on the question text, decide which money site to plug.
-    This function uses a creative, expanded list of money sites.
+    Creative, expanded money sites list
     """
     word_count = len(question_text.split())
     complexity = "simple" if word_count < 20 else "detailed"
@@ -196,6 +208,7 @@ def solve_captcha_if_present(driver):
     if not api_key:
         print("2Captcha API key not found.")
         return False
+
     data = {
         "key": api_key,
         "method": "userrecaptcha",
