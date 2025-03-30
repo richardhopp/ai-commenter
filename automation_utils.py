@@ -1,544 +1,557 @@
-import undetected_chromedriver as uc
-import random
-import time
-import requests
-import openai
-import subprocess
-import socket
-from packaging.version import Version as LooseVersion
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.keys import Keys
-from bs4 import BeautifulSoup
-import shutil
 import os
-import tempfile
+import time
+import random
 import logging
-import re
+import traceback
 import json
-from stem import Signal
-from stem.control import Controller
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
+from typing import List, Dict, Any, Optional, Tuple, Union
+from datetime import datetime
 
-# Configure logging
+# Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-# List of diverse and recent User-Agent strings
-USER_AGENTS = [
-    # Windows Chrome
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    # macOS Chrome
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    # Windows Firefox
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    # macOS Safari
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    # Windows Edge
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.2277.83",
-    # Mobile User Agents
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; SM-S928U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.143 Mobile Safari/537.36",
-]
+# Try importing various required libraries
+try:
+    import undetected_chromedriver as uc
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import (
+        TimeoutException, 
+        NoSuchElementException, 
+        ElementClickInterceptedException,
+        StaleElementReferenceException,
+        WebDriverException
+    )
+    import openai
+    from dotenv import load_dotenv
+except ImportError as e:
+    logger.error(f"Failed to import necessary libraries: {str(e)}")
+    logger.error("Please make sure all required packages are installed.")
+    raise
 
-# Browser viewport sizes to randomize
-VIEWPORT_SIZES = [
-    (1920, 1080),
-    (1366, 768),
-    (1536, 864),
-    (1440, 900),
-    (1280, 720),
-    (1680, 1050)
-]
+# Load environment variables
+load_dotenv()
 
-def _rotate_user_agent():
-    """Return a random user agent from the list."""
-    return random.choice(USER_AGENTS)
+# Configure OpenAI API
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    logger.warning("OPENAI_API_KEY environment variable not found.")
 
-def _random_viewport_size():
-    """Return a random viewport size."""
-    return random.choice(VIEWPORT_SIZES)
+# Constants
+DEFAULT_TIMEOUT = 20  # seconds
+MAX_RETRIES = 3
+TYPING_SPEED_MIN = 0.05  # seconds per character (fast typing)
+TYPING_SPEED_MAX = 0.15  # seconds per character (slow typing)
+HUMAN_DELAY_MIN = 0.5  # minimum delay between actions
+HUMAN_DELAY_MAX = 2.0  # maximum delay between actions
 
-def _randomize_typing_speed(text, min_delay=0.05, max_delay=0.2):
+def init_driver(headless: bool = True) -> webdriver.Chrome:
     """
-    Returns a function that will type text with random delays between keystrokes.
-    """
-    delays = [random.uniform(min_delay, max_delay) for _ in range(len(text))]
-    return zip(text, delays)
-
-def simulate_human_behavior(driver, element=None):
-    """
-    Simulates human behavior such as random scrolling and mouse movements.
-    """
-    try:
-        # Random scroll
-        scroll_amount = random.randint(100, 500)
-        driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
-        time.sleep(random.uniform(0.5, 1.5))
+    Initialize and return a Chrome webdriver with appropriate options.
+    
+    Args:
+        headless (bool): Whether to run Chrome in headless mode
         
-        # Random mouse movements if an element is provided
-        if element:
-            actions = ActionChains(driver)
-            actions.move_to_element_with_offset(
-                element, 
-                random.randint(-10, 10), 
-                random.randint(-10, 10)
-            )
-            actions.perform()
-            time.sleep(random.uniform(0.3, 0.7))
-        
-        # Sometimes move mouse to a random position on the page
-        if random.random() < 0.3:
-            x_position = random.randint(100, 700)
-            y_position = random.randint(100, 500)
-            driver.execute_script(f"document.elementFromPoint({x_position}, {y_position}).scrollIntoView({{behavior: 'smooth', block: 'center'}});")
-            time.sleep(random.uniform(0.2, 0.8))
-    except Exception as e:
-        logger.debug(f"Error in human behavior simulation: {e}")
-
-def get_next_tor_identity():
+    Returns:
+        webdriver.Chrome: Initialized Chrome webdriver
     """
-    Request a new identity from the Tor network.
-    """
-    try:
-        with Controller.from_port(port=9051) as controller:
-            controller.authenticate()
-            controller.signal(Signal.NEWNYM)
-            logger.info("Successfully requested new Tor identity")
-            time.sleep(5)  # Wait for the new identity to be established
-    except Exception as e:
-        logger.error(f"Error requesting new Tor identity: {e}")
-
-def test_proxy_connection(proxy=None):
-    """
-    Test if the proxy connection is working.
-    Returns the external IP if successful, None otherwise.
-    """
-    try:
-        session = requests.Session()
-        if proxy:
-            session.proxies = {
-                "http": proxy,
-                "https": proxy
-            }
-        
-        response = session.get("https://api.ipify.org?format=json", timeout=10)
-        data = response.json()
-        logger.info(f"Current external IP: {data['ip']}")
-        return data['ip']
-    except Exception as e:
-        logger.error(f"Error testing proxy connection: {e}")
-        return None
-
-def init_driver(proxy_address=None):
-    """
-    Initialize a Chrome driver with anti-detection measures.
-    """
-    logger.info('[init_driver] Initializing driver...')
     try:
         options = uc.ChromeOptions()
         
-        # Check CHROME_HEADLESS env variable (default true)
-        headless = os.environ.get("CHROME_HEADLESS", "true").lower() == "true"
         if headless:
-            options.add_argument("--headless=new")
+            options.add_argument("--headless")
         
-        # Anti-detection measures
+        # Add common options
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-extensions")
+        options.add_argument("--disable-popup-blocking")
+        options.add_argument("--start-maximized")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36")
         
-        # Randomize user agent
-        ua = _rotate_user_agent()
-        options.add_argument(f"--user-agent={ua}")
+        # Create and return the webdriver
+        driver = uc.Chrome(options=options)
+        driver.set_page_load_timeout(60)
         
-        # Set random viewport size
-        width, height = _random_viewport_size()
-        options.add_argument(f"--window-size={width},{height}")
-        
-        # Additional anti-fingerprinting measures
-        options.add_argument("--disable-features=IsolateOrigins,site-per-process")
-        options.add_argument("--disable-site-isolation-trials")
-        
-        # Language and locale randomization
-        locales = ["en-US", "en-GB", "en-CA", "en-AU"]
-        options.add_argument(f"--lang={random.choice(locales)}")
-        
-        # Set proxy if provided
-        if proxy_address:
-            options.add_argument(f"--proxy-server={proxy_address}")
-        
-        # Set binary location explicitly for containerized environments
-        chrome_binary_path = '/usr/bin/google-chrome-stable'
-        options.binary_location = chrome_binary_path
-        
-        logger.info(f'[init_driver] Using Chrome binary at: {chrome_binary_path}')
-        
-        # Find chromedriver
-        chromedriver_path = '/usr/local/bin/chromedriver'
-        logger.info(f'[init_driver] Using chromedriver at: {chromedriver_path}')
-        
-        # Create the Chrome driver with explicit paths
-        driver = uc.Chrome(
-            options=options,
-            browser_executable_path=chrome_binary_path,
-            driver_executable_path=chromedriver_path,
-            use_subprocess=False
-        )
-        
-        # Set page load timeout
-        driver.set_page_load_timeout(30)
-        
-        # Apply additional anti-detection JavaScript
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-                // Overwrite the 'webdriver' property to prevent detection
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-                
-                // Overwrite the navigator permissions property
-                const originalQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = (parameters) => (
-                    parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                );
-                
-                // Prevent detection via plugins
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => {
-                        const plugins = [];
-                        for (let i = 0; i < 3; i++) {
-                            plugins.push({
-                                name: `Plugin ${i}`,
-                                description: `Description ${i}`,
-                                filename: `plugin${i}.dll`,
-                                length: 1
-                            });
-                        }
-                        return plugins;
-                    }
-                });
-                
-                // Add a fake touch points function
-                const originalHasTouchPoints = navigator.maxTouchPoints;
-                Object.defineProperty(navigator, 'maxTouchPoints', {
-                    get: () => Math.floor(Math.random() * 2) === 0 ? 0 : 1
-                });
-                
-                // Add fake device memory
-                Object.defineProperty(navigator, 'deviceMemory', {
-                    get: () => Math.floor(Math.random() * 8) + 4
-                });
-            """
-        })
-        
-        logger.info('[init_driver] Driver initialized successfully with anti-detection measures.')
+        logger.info("Chrome WebDriver initialized successfully")
         return driver
+    
     except Exception as e:
-        logger.error(f'[init_driver] Error initializing driver: {e}')
-        logger.exception(e)
+        logger.error(f"Failed to initialize Chrome WebDriver: {str(e)}")
+        traceback.print_exc()
         raise
 
-def close_driver(driver):
+def simulate_human_behavior(driver: webdriver.Chrome, min_delay: float = None, max_delay: float = None) -> None:
     """
-    Safely close the browser driver.
+    Simulate human-like behavior by waiting a random amount of time.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        min_delay (float, optional): Minimum delay in seconds
+        max_delay (float, optional): Maximum delay in seconds
     """
-    logger.info('[close_driver] Closing driver...')
-    try:
-        driver.quit()
-        logger.info('[close_driver] Driver closed successfully.')
-    except Exception as e:
-        logger.error(f'[close_driver] Error closing driver: {e}')
-        logger.exception(e)
+    min_delay = min_delay or HUMAN_DELAY_MIN
+    max_delay = max_delay or HUMAN_DELAY_MAX
+    time.sleep(random.uniform(min_delay, max_delay))
 
-def search_google(query, max_results=5, proxy=None):
+def randomize_typing_speed(text: str, min_speed: float = None, max_speed: float = None) -> None:
     """
-    Search Google for relevant threads using the given query.
+    Simulate human typing by introducing random delays between keypresses.
+    
+    Args:
+        text (str): The text being typed
+        min_speed (float, optional): Minimum time per character in seconds
+        max_speed (float, optional): Maximum time per character in seconds
     """
-    logger.info(f'[search_google] Searching for: {query}')
-    driver = init_driver(proxy)
-    results = []
+    min_speed = min_speed or TYPING_SPEED_MIN
+    max_speed = max_speed or TYPING_SPEED_MAX
+    
+    for char in text:
+        yield char
+        time.sleep(random.uniform(min_speed, max_speed))
+
+def safe_click(driver: webdriver.Chrome, element, retries: int = 3) -> bool:
+    """
+    Safely click an element with retries to handle common exceptions.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        element: The element to click
+        retries (int): Number of retries before giving up
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    attempt = 0
+    while attempt < retries:
+        try:
+            # Scroll element into view before clicking
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+            simulate_human_behavior(driver, 0.3, 0.7)
+            element.click()
+            return True
+        except (ElementClickInterceptedException, StaleElementReferenceException) as e:
+            attempt += 1
+            logger.warning(f"Click attempt {attempt} failed: {str(e)}")
+            simulate_human_behavior(driver, 1.0, 2.0)
+            # If element is stale, try to find it again
+            if isinstance(e, StaleElementReferenceException) and hasattr(element, 'by') and hasattr(element, 'value'):
+                try:
+                    element = driver.find_element(element.by, element.value)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Unexpected error during click: {str(e)}")
+            return False
+    
+    logger.error(f"Failed to click element after {retries} attempts")
+    return False
+
+def wait_for_element(driver: webdriver.Chrome, by: By, value: str, timeout: int = DEFAULT_TIMEOUT, visible: bool = True) -> Optional[Any]:
+    """
+    Wait for an element to be present and optionally visible.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        by (By): The locator method
+        value (str): The locator value
+        timeout (int): Maximum time to wait in seconds
+        visible (bool): Whether to wait for visibility or just presence
+        
+    Returns:
+        The element if found, None otherwise
+    """
     try:
-        # Add randomization to search URL
-        search_params = {
-            'q': query,
-            'hl': random.choice(['en', 'en-US', 'en-GB']),
-            'gl': random.choice(['us', 'uk', 'ca', 'au']),
-            'pws': '0'  # Disable personalized search
-        }
+        wait = WebDriverWait(driver, timeout)
+        condition = EC.visibility_of_element_located if visible else EC.presence_of_element_located
+        element = wait.until(condition((by, value)))
+        return element
+    except TimeoutException:
+        logger.warning(f"Timed out waiting for element: {by}={value}")
+        return None
+    except Exception as e:
+        logger.error(f"Error waiting for element {by}={value}: {str(e)}")
+        return None
+
+def wait_for_elements(driver: webdriver.Chrome, by: By, value: str, timeout: int = DEFAULT_TIMEOUT, visible: bool = True) -> List[Any]:
+    """
+    Wait for elements to be present and optionally visible.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        by (By): The locator method
+        value (str): The locator value
+        timeout (int): Maximum time to wait in seconds
+        visible (bool): Whether to wait for visibility or just presence
         
-        search_url = f"https://www.google.com/search?{requests.compat.urlencode(search_params)}"
-        driver.get(search_url)
+    Returns:
+        List of elements if found, empty list otherwise
+    """
+    try:
+        wait = WebDriverWait(driver, timeout)
+        condition = EC.visibility_of_all_elements_located if visible else EC.presence_of_all_elements_located
+        elements = wait.until(condition((by, value)))
+        return elements
+    except TimeoutException:
+        logger.warning(f"Timed out waiting for elements: {by}={value}")
+        return []
+    except Exception as e:
+        logger.error(f"Error waiting for elements {by}={value}: {str(e)}")
+        return []
+
+def fill_text_field(driver: webdriver.Chrome, element, text: str, clear_first: bool = True, human_like: bool = True) -> bool:
+    """
+    Fill a text field with optional human-like typing.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        element: The input element
+        text (str): Text to enter
+        clear_first (bool): Whether to clear the field first
+        human_like (bool): Whether to simulate human typing
         
-        # Simulate human behavior with random delays and scrolling
-        time.sleep(random.uniform(1, 3))
-        simulate_human_behavior(driver)
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        if clear_first:
+            element.clear()
+            simulate_human_behavior(driver, 0.2, 0.5)
         
-        # Look for results with different selectors
-        result_selectors = [
-            "div.yuRUbf a",  # Standard search results
-            "div.g div.yuRUbf a",  # Alternative selector
-            "div[jscontroller] a[jsname][data-ved][ping]"  # Another possible selector
-        ]
+        if human_like:
+            for char in randomize_typing_speed(text):
+                element.send_keys(char)
+        else:
+            element.send_keys(text)
         
-        for selector in result_selectors:
-            elements = driver.find_elements(By.CSS_SELECTOR, selector)
-            if elements:
+        return True
+    except Exception as e:
+        logger.error(f"Error filling text field: {str(e)}")
+        return False
+
+def solve_captcha_if_present(driver: webdriver.Chrome) -> bool:
+    """
+    Detect and handle CAPTCHA if present on the page.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        
+    Returns:
+        bool: True if CAPTCHA was handled or not present, False if failed to handle
+    """
+    # Check for common CAPTCHA identifiers
+    captcha_identifiers = [
+        (By.ID, "captcha"),
+        (By.XPATH, "//iframe[contains(@src, 'recaptcha')]"),
+        (By.XPATH, "//iframe[contains(@src, 'hcaptcha')]"),
+        (By.XPATH, "//*[contains(text(), 'CAPTCHA')]"),
+        (By.XPATH, "//*[contains(text(), 'captcha')]"),
+        (By.XPATH, "//*[contains(text(), 'I am not a robot')]")
+    ]
+    
+    for by, value in captcha_identifiers:
+        try:
+            element = driver.find_element(by, value)
+            if element.is_displayed():
+                logger.warning("CAPTCHA detected! Automated solving not implemented.")
+                # In a real application, you might integrate a CAPTCHA solving service here
+                # For now, we'll just wait to give time for manual intervention
+                logger.info("Waiting 30 seconds for manual CAPTCHA resolution...")
+                time.sleep(30)
+                return True
+        except NoSuchElementException:
+            continue
+        except Exception as e:
+            logger.error(f"Error while checking for CAPTCHA: {str(e)}")
+    
+    return True  # No CAPTCHA detected or handled successfully
+
+def take_screenshot(driver: webdriver.Chrome, filename: str = None) -> str:
+    """
+    Take a screenshot for debugging purposes.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        filename (str, optional): The filename to save the screenshot as
+        
+    Returns:
+        str: Path to the saved screenshot
+    """
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"screenshot_{timestamp}.png"
+    
+    try:
+        # Ensure the screenshots directory exists
+        os.makedirs("screenshots", exist_ok=True)
+        filepath = os.path.join("screenshots", filename)
+        
+        driver.save_screenshot(filepath)
+        logger.info(f"Screenshot saved to {filepath}")
+        return filepath
+    except Exception as e:
+        logger.error(f"Failed to take screenshot: {str(e)}")
+        return ""
+
+def scroll_to_bottom(driver: webdriver.Chrome, scroll_pause_time: float = 1.0) -> None:
+    """
+    Scroll to the bottom of the page gradually.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        scroll_pause_time (float): Time to pause between scrolls
+    """
+    try:
+        # Get scroll height
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        
+        while True:
+            # Scroll down to bottom
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.7);")
+            
+            # Wait to load page
+            time.sleep(scroll_pause_time)
+            
+            # Calculate new scroll height and compare with last scroll height
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
                 break
-        
-        for element in elements[:max_results]:
-            simulate_human_behavior(driver, element)
-            url = element.get_attribute("href")
-            results.append(url)
-        
-        logger.info(f'[search_google] Found {len(results)} results')
+            last_height = new_height
     except Exception as e:
-        logger.error(f"[search_google] Error during search: {e}")
-    finally:
-        close_driver(driver)
-    return results
+        logger.error(f"Error scrolling to bottom: {str(e)}")
 
-def extract_thread_content(url, proxy=None):
+def scroll_into_view(driver: webdriver.Chrome, element) -> None:
     """
-    Extract content from a thread URL with advanced parsing.
+    Scroll element into the center of the viewport.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        element: The element to scroll to
     """
-    logger.info(f'[extract_thread_content] Extracting content from: {url}')
-    driver = init_driver(proxy)
-    content = ""
     try:
-        driver.get(url)
-        
-        # Simulate human behavior with random delays
-        time.sleep(random.uniform(2, 4))
-        simulate_human_behavior(driver)
-        
-        # Determine the domain to use appropriate extraction strategy
-        domain = re.search(r'https?://(?:www\.)?([^/]+)', url).group(1)
-        
-        html = driver.page_source
-        soup = BeautifulSoup(html, "html.parser")
-        
-        if "quora.com" in domain:
-            # Extract Quora question
-            question_selectors = [
-                "div.q-box.qu-borderAll.qu-borderRadius--small",
-                "div.q-text.qu-dynamicFontSize--regular",
-                "div.question-title"
-            ]
-            
-            for selector in question_selectors:
-                question_element = soup.select_one(selector)
-                if question_element:
-                    content = question_element.get_text(strip=True)
-                    break
-            
-            # If no question found, try getting the h1 title
-            if not content:
-                h1_element = soup.find("h1")
-                if h1_element:
-                    content = h1_element.get_text(strip=True)
-        
-        elif "reddit.com" in domain:
-            # Extract Reddit post
-            post_title = soup.select_one("h1")
-            post_content = soup.select_one("div[data-test-id='post-content']")
-            
-            if post_title:
-                title_text = post_title.get_text(strip=True)
-                content = title_text
-            
-            if post_content:
-                text_divs = post_content.select("div > div > p")
-                if text_divs:
-                    content_text = " ".join(div.get_text(strip=True) for div in text_divs)
-                    content = f"{content}: {content_text}" if content else content_text
-        
-        elif "tripadvisor.com" in domain:
-            # Extract TripAdvisor post
-            topic_title = soup.select_one("h1.topicTitle")
-            post_text = soup.select_one("div.postBody")
-            
-            if topic_title:
-                content = topic_title.get_text(strip=True)
-            
-            if post_text:
-                content_text = post_text.get_text(strip=True)
-                content = f"{content}: {content_text}" if content else content_text
-        
-        # Generic extraction as fallback
-        if not content:
-            # Try to get heading
-            heading = soup.find(["h1", "h2"])
-            heading_text = heading.get_text(strip=True) if heading else ""
-            
-            # Get main content paragraphs
-            paragraphs = soup.find_all("p")
-            paragraph_text = " ".join(p.get_text(strip=True) for p in paragraphs[:5]) if paragraphs else ""
-            
-            content = f"{heading_text}: {paragraph_text}" if heading_text else paragraph_text
-        
-        logger.info(f'[extract_thread_content] Extracted {len(content)} characters')
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        time.sleep(0.5)  # Short pause after scrolling
     except Exception as e:
-        logger.error(f"[extract_thread_content] Error extracting content: {e}")
-    finally:
-        close_driver(driver)
-    return content
+        logger.error(f"Error scrolling element into view: {str(e)}")
 
-def choose_money_site(question_text, websites_list=None):
+def check_for_errors(driver: webdriver.Chrome) -> Tuple[bool, str]:
     """
-    Intelligently select the best website to reference based on the question content.
+    Check the page for common error messages.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        
+    Returns:
+        Tuple[bool, str]: (error_found, error_message)
     """
-    # Default websites if none provided
-    if not websites_list:
-        websites = {
-            "Living Abroad - Aparthotels": {
-                "url": "https://aparthotel.com",
-                "description": "Offers aparthotels, rental options, and travel guides for local living.",
-                "keywords": ["living", "apartment", "rental", "hotel", "accommodation"]
-            },
-            "Crypto Rentals": {
-                "url": "https://cryptoapartments.com",
-                "description": "Modern rental platform accepting cryptocurrency with travel and lifestyle insights.",
-                "keywords": ["crypto", "bitcoin", "digital", "currency", "payment"]
-            },
-            "Serviced Apartments": {
-                "url": "https://servicedapartments.net",
-                "description": "Specializes in serviced apartments with travel tips and local renting rules.",
-                "keywords": ["service", "apartment", "business", "travel", "corporate"]
-            },
-            "Furnished Apartments": {
-                "url": "https://furnishedapartments.net",
-                "description": "Focuses on furnished apartments with immediate living solutions and local analysis.",
-                "keywords": ["furnished", "ready", "move-in", "apartment", "home"]
-            },
-            "Real Estate Abroad": {
-                "url": "https://realestateabroad.com",
-                "description": "International property investments, buying guides, financing tips, and market analysis.",
-                "keywords": ["real estate", "property", "buying", "investing", "international"]
-            },
-            "Property Developments": {
-                "url": "https://propertydevelopments.com",
-                "description": "Latest new property projects with detailed buying and financing guides.",
-                "keywords": ["development", "new", "project", "construction", "presale"]
-            },
-            "Property Investment": {
-                "url": "https://propertyinvestment.net",
-                "description": "Dedicated to property investment with how-to articles, financing guides, and yield analysis.",
-                "keywords": ["investment", "return", "yield", "roi", "portfolio"]
-            },
-            "Golden Visa Opportunities": {
-                "url": "https://golden-visa.com",
-                "description": "Focuses on Golden Visa properties and investment immigration for the global elite.",
-                "keywords": ["visa", "golden", "immigration", "citizenship", "passport"]
-            },
-            "Residence by Investment": {
-                "url": "https://residence-by-investment.com",
-                "description": "Guides investors on obtaining residency through property investments across markets.",
-                "keywords": ["residence", "permanent", "residency", "immigration", "permit"]
-            },
-            "Citizenship by Investment": {
-                "url": "https://citizenship-by-investment.net",
-                "description": "Covers citizenship-by-investment programs with global insights and investment tips.",
-                "keywords": ["citizenship", "passport", "naturalization", "immigration", "second"]
-            }
-        }
-    else:
-        websites = {site["name"]: {"url": site["url"], "description": site["description"], "keywords": []} for site in websites_list}
+    error_patterns = [
+        (By.XPATH, "//*[contains(text(), 'error')]"),
+        (By.XPATH, "//*[contains(text(), 'Error')]"),
+        (By.XPATH, "//*[contains(text(), 'not found')]"),
+        (By.XPATH, "//*[contains(text(), '404')]"),
+        (By.XPATH, "//*[contains(text(), 'failed')]")
+    ]
     
-    # Calculate question complexity based on word count and length
-    word_count = len(question_text.split())
-    complexity = "simple" if word_count < 20 else "detailed" if word_count < 50 else "complex"
+    for by, value in error_patterns:
+        try:
+            elements = driver.find_elements(by, value)
+            for element in elements:
+                if element.is_displayed():
+                    error_msg = element.text.strip()
+                    if error_msg:
+                        return True, error_msg
+        except Exception:
+            continue
     
-    # Score each website based on keyword relevance to the question
-    site_scores = {}
-    question_lower = question_text.lower()
-    
-    for site_name, site_data in websites.items():
-        score = 0
-        
-        # Check for exact keyword matches
-        for keyword in site_data.get("keywords", []):
-            if keyword.lower() in question_lower:
-                score += 10
-        
-        # Check for partial matches
-        words = question_lower.split()
-        site_name_words = site_name.lower().split()
-        description_words = site_data["description"].lower().split()
-        
-        for word in words:
-            if len(word) > 3:  # Ignore short words
-                if any(word in site_word for site_word in site_name_words):
-                    score += 5
-                if any(word in desc_word for desc_word in description_words):
-                    score += 2
-        
-        site_scores[site_name] = score
-    
-    # If all scores are 0, use a random site
-    if all(score == 0 for score in site_scores.values()):
-        selected_site_name = random.choice(list(websites.keys()))
-    else:
-        # Get the highest-scoring site
-        selected_site_name = max(site_scores.items(), key=lambda x: x[1])[0]
-    
-    selected_site = websites[selected_site_name]
-    return selected_site_name, selected_site, complexity
+    return False, ""
 
-def generate_ai_response(question_text, additional_prompt="", use_chatgpt=True, model="gpt-3.5-turbo", max_tokens=250, temperature=0.7, websites=None):
+def check_login_status(driver: webdriver.Chrome, logged_in_indicator: Tuple[By, str], 
+                      logged_out_indicator: Tuple[By, str]) -> bool:
     """
-    Generate an AI response using OpenAI's API with improved context handling.
+    Check if user is logged in.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        logged_in_indicator: Tuple of (By, selector) that indicates logged in state
+        logged_out_indicator: Tuple of (By, selector) that indicates logged out state
+        
+    Returns:
+        bool: True if logged in, False otherwise
     """
-    logger.info(f'[generate_ai_response] Generating response for question: {question_text[:50]}...')
-    
-    if not use_chatgpt:
-        return "Default answer: " + question_text[:100] + "..."
-    
-    site_name, site_details, complexity = choose_money_site(question_text, websites)
-    
-    # Create a more natural site reference
-    site_reference = f"{site_details['url']} - {site_details['description']}"
-    
-    # Adjust max tokens based on complexity if not explicitly set
-    if max_tokens == 250:
-        if complexity == "simple":
-            max_tokens = 150
-        elif complexity == "detailed":
-            max_tokens = 250
-        else:  # complex
-            max_tokens = 350
-    
-    # Create a system prompt that guides the AI to be conversational and include the site reference
-    system_prompt = f"""You are a helpful, conversational assistant providing value to users by answering their questions clearly and naturally.
-Your goal is to provide genuinely useful information while subtly mentioning a relevant website near the end of your response.
-The website to reference: {site_reference}
+    try:
+        # Check for logged in indicator
+        in_by, in_selector = logged_in_indicator
+        try:
+            logged_in_elem = driver.find_element(in_by, in_selector)
+            if logged_in_elem.is_displayed():
+                return True
+        except NoSuchElementException:
+            pass
+        
+        # Check for logged out indicator
+        out_by, out_selector = logged_out_indicator
+        try:
+            logged_out_elem = driver.find_element(out_by, out_selector)
+            if logged_out_elem.is_displayed():
+                return False
+        except NoSuchElementException:
+            pass
+        
+        # If neither found, default to logged out
+        return False
+    except Exception as e:
+        logger.error(f"Error checking login status: {str(e)}")
+        return False
 
-Guidelines:
-- Be conversational and friendly in your tone
-- Provide accurate, valuable information
-- Include the website reference naturally, not as an obvious advertisement
-- Make sure your response directly addresses the user's question
-- Keep your answer concise but informative"""
+def parse_page_data(driver: webdriver.Chrome, parsers: Dict[str, Tuple[By, str]]) -> Dict[str, Any]:
+    """
+    Parse data from the current page using provided selectors.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        parsers: Dictionary mapping data keys to (By, selector) tuples
+        
+    Returns:
+        Dict[str, Any]: Parsed data
+    """
+    result = {}
+    
+    for key, (by, selector) in parsers.items():
+        try:
+            elements = driver.find_elements(by, selector)
+            if elements:
+                if len(elements) == 1:
+                    result[key] = elements[0].text.strip()
+                else:
+                    result[key] = [elem.text.strip() for elem in elements]
+            else:
+                result[key] = None
+        except Exception as e:
+            logger.error(f"Error parsing {key}: {str(e)}")
+            result[key] = None
+    
+    return result
 
-    # Combine user question with any additional instructions
-    user_prompt = question_text
-    if additional_prompt:
-        user_prompt += f"\n\nAdditional notes: {additional_prompt}"
+def save_cookies(driver: webdriver.Chrome, filename: str = "cookies.json") -> bool:
+    """
+    Save current browser cookies to a file.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        filename (str): File to save cookies to
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        cookies = driver.get_cookies()
+        with open(filename, 'w') as f:
+            json.dump(cookies, f)
+        logger.info(f"Cookies saved to {filename}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save cookies: {str(e)}")
+        return False
+
+def load_cookies(driver: webdriver.Chrome, filename: str = "cookies.json") -> bool:
+    """
+    Load cookies from a file into the browser.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        filename (str): File to load cookies from
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        if not os.path.exists(filename):
+            logger.warning(f"Cookie file {filename} not found")
+            return False
+            
+        with open(filename, 'r') as f:
+            cookies = json.load(f)
+            
+        for cookie in cookies:
+            # Some cookies can't be loaded properly, so we need to handle exceptions
+            try:
+                if 'expiry' in cookie:
+                    cookie['expiry'] = int(cookie['expiry'])
+                driver.add_cookie(cookie)
+            except Exception as e:
+                logger.debug(f"Error adding cookie: {str(e)}")
+                
+        logger.info(f"Cookies loaded from {filename}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to load cookies: {str(e)}")
+        return False
+
+def safe_get(driver: webdriver.Chrome, url: str, max_retries: int = 3) -> bool:
+    """
+    Safely navigate to a URL with retries and error handling.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance
+        url (str): URL to navigate to
+        max_retries (int): Maximum number of retry attempts
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            driver.get(url)
+            # Check if page loaded successfully
+            WebDriverWait(driver, 10).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+            return True
+        except Exception as e:
+            attempt += 1
+            logger.warning(f"Attempt {attempt} to load {url} failed: {str(e)}")
+            if attempt >= max_retries:
+                logger.error(f"Failed to load {url} after {max_retries} attempts")
+                return False
+            time.sleep(2 * attempt)  # Exponential backoff
+
+def generate_content_with_openai(
+    user_prompt: str, 
+    system_prompt: str = "You are a helpful assistant.", 
+    model: str = "gpt-3.5-turbo", 
+    max_tokens: int = 500, 
+    temperature: float = 0.7,
+    fallback_response: str = None
+) -> str:
+    """
+    Generate content using OpenAI's API.
+    
+    Args:
+        user_prompt (str): The user prompt
+        system_prompt (str): The system prompt that sets the AI behavior
+        model (str): The OpenAI model to use
+        max_tokens (int): Maximum tokens in the response
+        temperature (float): Randomness of the output (0.0-1.0)
+        fallback_response (str): Response to return if API call fails
+        
+    Returns:
+        str: Generated content
+    """
+    if not openai.api_key:
+        logger.error("OpenAI API key not set")
+        return fallback_response if fallback_response else "API key not configured."
     
     try:
         response = openai.ChatCompletion.create(
@@ -551,4 +564,24 @@ Guidelines:
             temperature=temperature,
             top_p=1,
             frequency_penalty=0.2,
-            presence
+            presence_penalty=0.1
+        )
+        return response.choices[0].message["content"]
+    except Exception as e:
+        logger.error(f"Error generating content with OpenAI: {str(e)}")
+        return fallback_response if fallback_response else "I couldn't generate appropriate content at this time."
+
+def cleanup_driver(driver: webdriver.Chrome) -> None:
+    """
+    Safely close and clean up the webdriver.
+    
+    Args:
+        driver (webdriver.Chrome): The webdriver instance to clean up
+    """
+    try:
+        driver.quit()
+        logger.info("WebDriver closed successfully")
+    except Exception as e:
+        logger.error(f"Error closing WebDriver: {str(e)}")
+
+# Add any additional utility functions as needed
