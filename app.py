@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Dict, Any, Optional, Tuple, Union
+from search_respond_ui import render_search_and_respond_page
 
 # Set up logging
 logging.basicConfig(
