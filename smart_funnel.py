@@ -1198,3 +1198,24 @@ if __name__ == "__main__":
             
             response = handle_question(question, platform=platform)
             print("\nResponse:", response)
+
+def create_smart_funnel_for_thread(thread, money_site_db):
+    """
+    Create a smart funnel reference strategy for a thread.
+    
+    Args:
+        thread: The search result or thread to analyze
+        money_site_db: The money site database
+        
+    Returns:
+        ReferenceStrategy object or None if no match found
+    """
+    question_text = thread.question_text or thread.title
+    
+    # Process the question to find relevant money site and strategy
+    result = process_question(question_text, thread, thread.platform)
+    
+    if result["has_relevant_site"]:
+        return result["reference_strategy"]
+    
+    return None
