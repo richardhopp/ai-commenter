@@ -146,8 +146,6 @@ def render_search_and_respond_page():
         if st.session_state.money_site_db and st.session_state.money_site_db.sites:
             st.subheader("Registered Money Sites")
             
-            # Display sites in an expandable format
-            for
           # Display sites in an expandable format
             for site in st.session_state.money_site_db.sites:
                 with st.expander(f"{site.name} - {site.primary_url}"):
