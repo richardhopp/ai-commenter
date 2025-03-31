@@ -1360,3 +1360,48 @@ def main():
 # Run the app
 if __name__ == "__main__":
     main()
+# Add the new module import near the other imports
+from search_respond_ui import render_search_and_respond_page
+
+# Modify the render_sidebar function to include the new page
+def render_sidebar():
+    """Render the navigation sidebar"""
+    with st.sidebar:
+        st.title("Content Automation")
+        
+        # Add "Search & Respond" to the navigation options
+        page = st.radio(
+            "Navigation",
+            ["Dashboard", "Content Creation", "Platform Posting", "Scheduling", "Analytics", "Search & Respond", "Settings"]
+        )
+        
+        # Rest of your existing function...
+    
+    return page
+
+# Modify the main function to include the new page
+def main():
+    """Main application logic"""
+    # Initialize session state and other existing code...
+    
+    # Render sidebar and get current page
+    current_page = render_sidebar()
+    
+    # Store current page in session state
+    st.session_state.page = current_page
+    
+    # Render the selected page
+    if current_page == "Dashboard":
+        render_dashboard()
+    elif current_page == "Content Creation":
+        render_content_creation()
+    elif current_page == "Platform Posting":
+        render_platform_posting()
+    elif current_page == "Scheduling":
+        render_scheduling()
+    elif current_page == "Analytics":
+        render_analytics()
+    elif current_page == "Search & Respond":  # Add this new condition
+        render_search_and_respond_page()
+    elif current_page == "Settings":
+        render_settings()
