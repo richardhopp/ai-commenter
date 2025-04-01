@@ -1162,21 +1162,21 @@ def main():
 # Run the app
 if __name__ == "__main__":
     main()
-                            
-                            st.success("Content saved to library!")
-                    
-                    # Save to session state
-                    if "generated_contents" not in st.session_state:
-                        st.session_state.generated_contents = []
-                    
-                    st.session_state.generated_contents.append({
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "topic": topic,
-                        "type": content_type,
-                        "platform": platform,
-                        "tone": tone,
-                        "content": generated_content
-                    })
+
+    st.success("Content saved to library!")
+
+    # Save to session state
+    if "generated_contents" not in st.session_state:
+        st.session_state.generated_contents = []
+
+    st.session_state.generated_contents.append({
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "topic": topic,
+        "type": content_type,
+        "platform": platform,
+        "tone": tone,
+        "content": generated_content
+    })
 
 def render_platform_posting():
     """Render the platform posting page"""
