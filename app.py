@@ -387,7 +387,7 @@ def render_sidebar():
         
         page = st.radio(
             "Navigation",
-            ["Dashboard", "Content Creation", "Platform Posting", "Scheduling", "Analytics", "Settings"]
+            ["Dashboard", "Content Creation", "Platform Posting", "Scheduling", "Analytics", "Search & Respond", "Settings"]
         )
         
         st.markdown("---")
@@ -655,210 +655,6 @@ def render_content_creation():
                                 "content": generated_content,
                                 "hashtags": hashtags if 'hashtags' in locals() else []
                             })
-                            
-                            st.success("Content saved to library!")
-                    
-                    # Save to session state
-                    if "generated_contents" not in st.session_state:
-                        st.session_state.generated_contents = []
-                    
-                    st.session_state.generated_contents.append({
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "topic": topic,
-                        "type": content_type,
-                        "platform": platform,
-                        "tone": tone,
-                        "content": generated_content
-                    })
-
-def render_platform_posting():
-    """Render the platform posting page"""
-    st.title("Platform Posting")
-    
-    if not AUTOMATION_AVAILABLE:
-        st.error("Automation modules are not available. Cannot proceed with posting.")
-    else:
-        # Check if we came from content generation
-        content_to_post = st.session_state.get("content_to_post", "")
-        selected_platform = st.session_state.get("selected_platform", "Quora")
-        
-        # Platform selection
-        if not content_to_post:
-            platform_for_posting = st.selectbox(
-                "Select platform for posting",
-                ["Quora", "Reddit", "TripAdvisor"]
-            )
-        else:
-            platform_for_posting = selected_platform
-            st.info(f"Content ready for posting to {platform_for_posting}")
-        
-        # Content selection
-        if not content_to_post:
-            content_options = []
-            
-            # Add from generated content
-            if "generated_contents" in st.session_state and st.session_state.generated_contents:
-                content_options.extend([
-                    f"{item['timestamp']} - {item['topic']} ({item['type']} for {item['platform']})"
-                    for item in st.session_state.generated_contents
-                ])
-            
-            # Add from content library
-            if "content_library" in st.session_state and st.session_state.content_library:
-                content_options.extend([
-                    f"Library: {item['timestamp']} - {item['topic']} ({item['type']})"
-                    for item in st.session_state.content_library
-                ])
-            
-            content_options.append("Use custom content")
-            
-            selected_content_option = st.selectbox("Select content", content_options)
-            
-            # Custom content input if selected
-            if selected_content_option == "Use custom content":
-                content_to_post = st.text_area("Enter your content", height=200)
-            else:
-                # Get the selected content from session state
-                if selected_content_option.startswith("Library:"):
-                    # Extract from content library
-                    library_index = content_options.index(selected_content_option) - len(st.session_state.get("generated_contents", []))
-                    if library_index < len(st.session_state.content_library):
-                        content_to_post = st.session_state.content_library[library_index]["content"]
-                else:
-                    # Extract from generated contents
-                    generated_index = content_options.index(selected_content_option)
-                    if generated_index < len(st.session_state.generated_contents):
-                        content_to_post = st.session_state.generated_contents[generated_index]["content"]
-                
-                st.text_area("Content to post", content_to_post, height=200, disabled=True)
-        else:
-            st.text_area("Content to post", content_to_post, height=200, disabled=True)
-        
-        # Get username and password for the selected platform
-        platform_key = platform_for_posting.lower()
-        username = platform_credentials.get(platform_key, {}).get("username", "")
-        password = platform_credentials.get(platform_key, {}).get("password", "")
-        
-        # Platform-specific fields
-        if platform_for_posting == "Quora":
-            # For Quora, we need question format
-            if content_to_post and not content_to_post.endswith("?"):
-                st.warning("Content for Quora should be in question format and end with a question mark.")
-        
-        elif platform_for_posting == "Reddit":
-            # For Reddit, we need subreddit and title
-            subreddit = st.text_input("Subreddit (without r/)")
-            post_title = st.text_input("Post title")
-        
-        elif platform_for_posting == "TripAdvisor":
-            # For TripAdvisor, we need location/hotel/restaurant
-            location_name = st.text_input("Location/Hotel/Restaurant name")
-            rating = st.slider("Rating (1-5)", 1, 5, 4)
-        
-        # Post button
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            post_button = st.button("Post Content")
-        
-        with col2:
-            headless_mode = st.checkbox("Run in headless mode", value=True)
-        
-        if post_button:
-            if not content_to_post:
-                st.error("Please select or enter content to post.")
-            elif not username or not password:
-                st.error(f"Credentials for {platform_for_posting} are not configured.")
-            else:
-                with st.spinner(f"Posting to {platform_for_posting}..."):
-                    try:
-                        result = None
-                        
-                        if platform_for_posting == "Quora":
-                            result = quora_login_and_post(
-                                email=username,
-                                password=password,
-                                question=content_to_post,
-                                headless=headless_mode
-                            )
-                        
-                        elif platform_for_posting == "Reddit":
-                            if not subreddit or not post_title:
-                                st.error("Subreddit and post title are required for Reddit posts.")
-                            else:
-                                result = reddit_login_and_post(
-                                    username=username,
-                                    password=password,
-                                    subreddit=subreddit,
-                                    title=post_title,
-                                    content=content_to_post,
-                                    headless=headless_mode
-                                )
-                        
-                        elif platform_for_posting == "TripAdvisor":
-                            if not location_name:
-                                st.error("Location name is required for TripAdvisor reviews.")
-                            else:
-                                result = tripadvisor_login_and_post(
-                                    username=username,
-                                    password=password,
-                                    location_name=location_name,
-                                    rating=rating,
-                                    review_text=content_to_post,
-                                    headless=headless_mode
-                                )
-                        
-                        # Display result
-                        if result and result.get("success"):
-                            st.success(f"Successfully posted to {platform_for_posting}!")
-                            if result.get("url"):
-                                st.markdown(f"[View your post]({result['url']})")
-                            
-                            # Log the successful post
-                            if "post_logs" not in st.session_state:
-                                st.session_state.post_logs = []
-                            
-                            st.session_state.post_logs.append({
-                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "platform": platform_for_posting,
-                                "content": content_to_post[:100] + "..." if len(content_to_post) > 100 else content_to_post,
-                                "success": True,
-                                "url": result.get("url", "")
-                            })
-                            
-                            # Clear the content_to_post if we came from content generation
-                            if "content_to_post" in st.session_state:
-                                del st.session_state.content_to_post
-                        else:
-                            error_msg = result.get("error", "Unknown error") if result else "Failed to post"
-                            st.error(f"Failed to post: {error_msg}")
-                            
-                            # Log the failed post
-                            if "post_logs" not in st.session_state:
-                                st.session_state.post_logs = []
-                            
-                            st.session_state.post_logs.append({
-                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "platform": platform_for_posting,
-                                "content": content_to_post[:100] + "..." if len(content_to_post) > 100 else content_to_post,
-                                "success": False,
-                                "error": error_msg
-                            })
-                    
-                    except Exception as e:
-                        st.error(f"Error during posting: {str(e)}")
-                        
-                        # Log the exception
-                        if "post_logs" not in st.session_state:
-                            st.session_state.post_logs = []
-                        
-                        st.session_state.post_logs.append({
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "platform": platform_for_posting,
-                            "content": content_to_post[:100] + "..." if len(content_to_post) > 100 else content_to_post,
-                            "success": False,
-                            "error": str(e)
-                        })
 
 def render_scheduling():
     """Render the scheduling page"""
@@ -1344,50 +1140,6 @@ def main():
     # Render sidebar and get current page
     current_page = render_sidebar()
     
-    # Render the selected page
-    if current_page == "Dashboard":
-        render_dashboard()
-    elif current_page == "Content Creation":
-        render_content_creation()
-    elif current_page == "Platform Posting":
-        render_platform_posting()
-    elif current_page == "Scheduling":
-        render_scheduling()
-    elif current_page == "Analytics":
-        render_analytics()
-    elif current_page == "Settings":
-        render_settings()
-
-# Run the app
-if __name__ == "__main__":
-    main()
-# Add the new module import near the other imports
-from search_respond_ui import render_search_and_respond_page
-
-# Modify the render_sidebar function to include the new page
-def render_sidebar():
-    """Render the navigation sidebar"""
-    with st.sidebar:
-        st.title("Content Automation")
-        
-        # Add "Search & Respond" to the navigation options
-        page = st.radio(
-            "Navigation",
-            ["Dashboard", "Content Creation", "Platform Posting", "Scheduling", "Analytics", "Search & Respond", "Settings"]
-        )
-        
-        # Rest of your existing function...
-    
-    return page
-
-# Modify the main function to include the new page
-def main():
-    """Main application logic"""
-    # Initialize session state and other existing code...
-    
-    # Render sidebar and get current page
-    current_page = render_sidebar()
-    
     # Store current page in session state
     st.session_state.page = current_page
     
@@ -1402,7 +1154,215 @@ def main():
         render_scheduling()
     elif current_page == "Analytics":
         render_analytics()
-    elif current_page == "Search & Respond":  # Add this new condition
+    elif current_page == "Search & Respond":
         render_search_and_respond_page()
     elif current_page == "Settings":
         render_settings()
+
+# Run the app
+if __name__ == "__main__":
+    main()
+                            
+                            st.success("Content saved to library!")
+                    
+                    # Save to session state
+                    if "generated_contents" not in st.session_state:
+                        st.session_state.generated_contents = []
+                    
+                    st.session_state.generated_contents.append({
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "topic": topic,
+                        "type": content_type,
+                        "platform": platform,
+                        "tone": tone,
+                        "content": generated_content
+                    })
+
+def render_platform_posting():
+    """Render the platform posting page"""
+    st.title("Platform Posting")
+    
+    if not AUTOMATION_AVAILABLE:
+        st.error("Automation modules are not available. Cannot proceed with posting.")
+    else:
+        # Check if we came from content generation
+        content_to_post = st.session_state.get("content_to_post", "")
+        selected_platform = st.session_state.get("selected_platform", "Quora")
+        
+        # Platform selection
+        if not content_to_post:
+            platform_for_posting = st.selectbox(
+                "Select platform for posting",
+                ["Quora", "Reddit", "TripAdvisor"]
+            )
+        else:
+            platform_for_posting = selected_platform
+            st.info(f"Content ready for posting to {platform_for_posting}")
+        
+        # Content selection
+        if not content_to_post:
+            content_options = []
+            
+            # Add from generated content
+            if "generated_contents" in st.session_state and st.session_state.generated_contents:
+                content_options.extend([
+                    f"{item['timestamp']} - {item['topic']} ({item['type']} for {item['platform']})"
+                    for item in st.session_state.generated_contents
+                ])
+            
+            # Add from content library
+            if "content_library" in st.session_state and st.session_state.content_library:
+                content_options.extend([
+                    f"Library: {item['timestamp']} - {item['topic']} ({item['type']})"
+                    for item in st.session_state.content_library
+                ])
+            
+            content_options.append("Use custom content")
+            
+            selected_content_option = st.selectbox("Select content", content_options)
+            
+            # Custom content input if selected
+            if selected_content_option == "Use custom content":
+                content_to_post = st.text_area("Enter your content", height=200)
+            else:
+                # Get the selected content from session state
+                if selected_content_option.startswith("Library:"):
+                    # Extract from content library
+                    library_index = content_options.index(selected_content_option) - len(st.session_state.get("generated_contents", []))
+                    if library_index < len(st.session_state.content_library):
+                        content_to_post = st.session_state.content_library[library_index]["content"]
+                else:
+                    # Extract from generated contents
+                    generated_index = content_options.index(selected_content_option)
+                    if generated_index < len(st.session_state.generated_contents):
+                        content_to_post = st.session_state.generated_contents[generated_index]["content"]
+                
+                st.text_area("Content to post", content_to_post, height=200, disabled=True)
+        else:
+            st.text_area("Content to post", content_to_post, height=200, disabled=True)
+        
+        # Get username and password for the selected platform
+        platform_key = platform_for_posting.lower()
+        username = platform_credentials.get(platform_key, {}).get("username", "")
+        password = platform_credentials.get(platform_key, {}).get("password", "")
+        
+        # Platform-specific fields
+        if platform_for_posting == "Quora":
+            # For Quora, we need question format
+            if content_to_post and not content_to_post.endswith("?"):
+                st.warning("Content for Quora should be in question format and end with a question mark.")
+        
+        elif platform_for_posting == "Reddit":
+            # For Reddit, we need subreddit and title
+            subreddit = st.text_input("Subreddit (without r/)")
+            post_title = st.text_input("Post title")
+        
+        elif platform_for_posting == "TripAdvisor":
+            # For TripAdvisor, we need location/hotel/restaurant
+            location_name = st.text_input("Location/Hotel/Restaurant name")
+            rating = st.slider("Rating (1-5)", 1, 5, 4)
+        
+        # Post button
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            post_button = st.button("Post Content")
+        
+        with col2:
+            headless_mode = st.checkbox("Run in headless mode", value=True)
+        
+        if post_button:
+            if not content_to_post:
+                st.error("Please select or enter content to post.")
+            elif not username or not password:
+                st.error(f"Credentials for {platform_for_posting} are not configured.")
+            else:
+                with st.spinner(f"Posting to {platform_for_posting}..."):
+                    try:
+                        result = None
+                        
+                        if platform_for_posting == "Quora":
+                            result = quora_login_and_post(
+                                email=username,
+                                password=password,
+                                question=content_to_post,
+                                headless=headless_mode
+                            )
+                        
+                        elif platform_for_posting == "Reddit":
+                            if not subreddit or not post_title:
+                                st.error("Subreddit and post title are required for Reddit posts.")
+                            else:
+                                result = reddit_login_and_post(
+                                    username=username,
+                                    password=password,
+                                    subreddit=subreddit,
+                                    title=post_title,
+                                    content=content_to_post,
+                                    headless=headless_mode
+                                )
+                        
+                        elif platform_for_posting == "TripAdvisor":
+                            if not location_name:
+                                st.error("Location name is required for TripAdvisor reviews.")
+                            else:
+                                result = tripadvisor_login_and_post(
+                                    username=username,
+                                    password=password,
+                                    location_name=location_name,
+                                    rating=rating,
+                                    review_text=content_to_post,
+                                    headless=headless_mode
+                                )
+                        
+                        # Display result
+                        if result and result.get("success"):
+                            st.success(f"Successfully posted to {platform_for_posting}!")
+                            if result.get("url"):
+                                st.markdown(f"[View your post]({result['url']})")
+                            
+                            # Log the successful post
+                            if "post_logs" not in st.session_state:
+                                st.session_state.post_logs = []
+                            
+                            st.session_state.post_logs.append({
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "platform": platform_for_posting,
+                                "content": content_to_post[:100] + "..." if len(content_to_post) > 100 else content_to_post,
+                                "success": True,
+                                "url": result.get("url", "")
+                            })
+                            
+                            # Clear the content_to_post if we came from content generation
+                            if "content_to_post" in st.session_state:
+                                del st.session_state.content_to_post
+                        else:
+                            error_msg = result.get("error", "Unknown error") if result else "Failed to post"
+                            st.error(f"Failed to post: {error_msg}")
+                            
+                            # Log the failed post
+                            if "post_logs" not in st.session_state:
+                                st.session_state.post_logs = []
+                            
+                            st.session_state.post_logs.append({
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "platform": platform_for_posting,
+                                "content": content_to_post[:100] + "..." if len(content_to_post) > 100 else content_to_post,
+                                "success": False,
+                                "error": error_msg
+                            })
+                    
+                    except Exception as e:
+                        st.error(f"Error during posting: {str(e)}")
+                        
+                        # Log the exception
+                        if "post_logs" not in st.session_state:
+                            st.session_state.post_logs = []
+                        
+                        st.session_state.post_logs.append({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "platform": platform_for_posting,
+                            "content": content_to_post[:100] + "..." if len(content_to_post) > 100 else content_to_post,
+                            "success": False,
+                            "error": str(e)
+                        })
