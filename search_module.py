@@ -10,6 +10,7 @@ import requests
 from typing import List, Dict, Any, Optional, Union
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
+from datetime import datetime, timedelta
 import concurrent.futures
 
 # Set up logging
