@@ -658,7 +658,7 @@ def cached_search_for_threads(query: str, platforms: List[str] = None, max_resul
         cache_time, cache_results = cached_entry
         
         # Check if cache is still valid
-        from datetime import datetime, timedelta
+        # No need to import datetime here since we've added it at the top of the file
         if datetime.now() - cache_time < timedelta(hours=cache_duration_hours):
             logger.info(f"Using cached search results for '{query}'")
             return cache_results
@@ -668,7 +668,7 @@ def cached_search_for_threads(query: str, platforms: List[str] = None, max_resul
     
     # Cache the results
     if use_cache:
-        from datetime import datetime
+        # No need to import datetime here since we've added it at the top of the file
         _search_cache[cache_key] = (datetime.now(), results)
         
         # Clean up old cache entries
