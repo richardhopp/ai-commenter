@@ -1171,7 +1171,7 @@ if __name__ == "__main__":
 
     st.session_state.generated_contents.append({
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "topic": topic,
+        "topic": topic if 'topic' in locals() else "Default Topic",
         "type": content_type,
         "platform": platform,
         "tone": tone,
